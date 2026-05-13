@@ -26,7 +26,13 @@ export default class DeliveryAssignmentRepository {
 
   async findByCourierId(courierId) {
     const [rows] = await this.#database.query(
-      `SELECT * FROM DeliveryAssignment WHERE courierId = ?`, // fetches all assignments for a given courrier
+      // Join with Order so that if the customer has paid (Order.status = Delivered),
+      // the assignment reflects Delivered even if DeliveryAssignment.status is still Arrived.
+      `SELECT da.*,
+              IF(o.status = 'Delivered', 'Delivered', da.status) AS status
+       FROM DeliveryAssignment da
+       JOIN \`Order\` o ON da.orderId = o.orderId
+       WHERE da.courierId = ?`,
       [courierId],
     );
     return rows; // returns all matching rows — used to populate the courrier dashboard
@@ -40,5 +46,5 @@ export default class DeliveryAssignmentRepository {
     );
   }
 
-  // DELETE
 }
+

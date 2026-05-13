@@ -1,5 +1,6 @@
 import { v4 } from "uuid"; // generates a unique ID for each new order
 import OrderRepository from "../Database/OrderRepository.mjs"; // persists orders and their items
+import DeliveryAssignmentRepository from "../Database/DeliveryAssignmentRepository.mjs"; // updates assignment status when order is completed
 import { errorController } from "./ErrorController.mjs"; // sends error pages on failure
 import { HTTP_STATUS, OrderStatus, OrderLimits } from "../Utils/constants.mjs"; // status constants and business rule limits
 import { parseBody } from "../Utils/bodyParser.mjs"; // reads and decodes the POST request body
@@ -7,6 +8,7 @@ import { verifyToken } from "../Utils/token.mjs"; // reads the JWT cookie to ide
 import { renderHTML } from "../Utils/renderHTML.mjs"; // renders an HTML template with injected data
 
 const repository = new OrderRepository(); // single repository instance reused across all handlers
+const assignmentRepo = new DeliveryAssignmentRepository(); // used to sync courier assignment status on order completion
 
 export const orderController = {
   // handles POST /cart/add — adds one item to the customer's in-progress cart for a restaurant
@@ -135,7 +137,14 @@ export const orderController = {
 
       const { orderId } = await parseBody(req);
 
+      // Mark the order itself as Delivered
       await repository.updateStatus(orderId, OrderStatus.DELIVERED);
+
+      // Also mark the courier's DeliveryAssignment as Delivered so their dashboard updates
+      const assignment = await assignmentRepo.findByOrderId(orderId);
+      if (assignment) {
+        await assignmentRepo.updateStatus(assignment.assignmentId, OrderStatus.DELIVERED);
+      }
 
       res.writeHead(302, {
         Location: `/order?id=${orderId}`,

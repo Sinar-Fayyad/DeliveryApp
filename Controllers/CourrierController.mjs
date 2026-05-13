@@ -144,16 +144,16 @@ export const courrierController = {
               return `
     <li>
       <div class="order-meta">
-        <div style="display:flex; align-items:center; gap:0.75rem; justify-content:flex-start;">
-          ${effectiveCourierStatus === OrderStatus.ARRIVED || effectiveCourierStatus === OrderStatus.DELIVERED
-            ? `<span class="badge badge-${statusClassForBadge}">${effectiveStatusLabel}</span>`
-            : ""}
+        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
           <span>
             Order
             <code style="font-size:0.78rem; color:var(--text-muted);">
               #${a.orderId.slice(0, 8)}
             </code>
           </span>
+          ${effectiveCourierStatus === OrderStatus.ARRIVED || effectiveCourierStatus === OrderStatus.DELIVERED
+            ? `<span class="badge badge-${statusClassForBadge}">${effectiveStatusLabel}</span>`
+            : ""}
         </div>
       </div>
 
