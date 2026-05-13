@@ -117,19 +117,44 @@ export const courrierController = {
               }
 
 
+              // Keep badge label in sync with effective UI status.
+              const effectiveStatusLabel =
+                effectiveCourierStatus === OrderStatus.WAITING_COURIER
+                  ? OrderStatus.WAITING_COURIER
+                  : effectiveCourierStatus === OrderStatus.ONTHEWAY
+                    ? OrderStatus.ONTHEWAY
+                    : effectiveCourierStatus === OrderStatus.ARRIVED
+                      ? OrderStatus.ARRIVED
+                      : effectiveCourierStatus === OrderStatus.DELIVERED
+                        ? OrderStatus.DELIVERED
+                        : a.status;
+
+              // Avoid showing Submitted badge on courier page.
+              const statusClassForBadge =
+                effectiveStatusLabel === OrderStatus.WAITING_COURIER
+                  ? "waiting"
+                  : effectiveStatusLabel === OrderStatus.ONTHEWAY
+                    ? "ontheway"
+                    : effectiveStatusLabel === OrderStatus.ARRIVED
+                      ? "arrived"
+                      : effectiveStatusLabel === OrderStatus.DELIVERED
+                        ? "delivered"
+                        : statusClass;
+
               return `
     <li>
       <div class="order-meta">
-        <span>
-          Order
-          <code style="font-size:0.78rem; color:var(--text-muted);">
-            #${a.orderId.slice(0, 8)}
-          </code>
-        </span>
-
-        <span class="order-status">
-          <span class="badge badge-${statusClass}">${a.status}</span>
-        </span>
+        <div style="display:flex; align-items:center; gap:0.75rem; justify-content:flex-start;">
+          ${effectiveCourierStatus === OrderStatus.ARRIVED || effectiveCourierStatus === OrderStatus.DELIVERED
+            ? `<span class="badge badge-${statusClassForBadge}">${effectiveStatusLabel}</span>`
+            : ""}
+          <span>
+            Order
+            <code style="font-size:0.78rem; color:var(--text-muted);">
+              #${a.orderId.slice(0, 8)}
+            </code>
+          </span>
+        </div>
       </div>
 
       <div class="order-actions">

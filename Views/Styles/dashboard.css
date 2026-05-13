@@ -263,6 +263,13 @@ ul.item-list li .order-meta {
   gap: 0.25rem;
 }
 
+ul.item-list li .order-meta > div {
+  /* courier controller renders order-meta inner as a flex row; force it to left */
+  justify-content: flex-start;
+}
+
+
+
 ul.item-list li .order-actions {
   display: flex;
   align-items: flex-start;
