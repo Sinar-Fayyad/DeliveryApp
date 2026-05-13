@@ -36,6 +36,16 @@
           {{restaurantList}}
         </ul>
       </div>
+
+      <!-- My Orders Section -->
+      <div class="card" style="margin-top:1.5rem;">
+        <div class="card-header">
+          <span class="card-title">My Orders</span>
+        </div>
+        <ul class="item-list" id="order-list">
+          {{orderList}}
+        </ul>
+      </div>
     </div>
 
     <script>
@@ -44,6 +54,12 @@
       document.getElementById("restaurant-list").addEventListener("click", (e) => {
         const li = e.target.closest("li");
         if (li) li.style.opacity = "0.7";
+      });
+
+      // Confirm before paying to avoid accidental taps
+      document.getElementById("order-list").addEventListener("submit", (e) => {
+        const confirmed = window.confirm("Confirm payment and collect your order?");
+        if (!confirmed) e.preventDefault();
       });
     </script>
   </body>

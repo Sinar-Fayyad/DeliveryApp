@@ -40,6 +40,19 @@ export default class OrderRepository {
     return rows; // returns all matching rows — used to list a customer's orders
   }
 
+  // Fetches all non-incomplete orders for a customer, joined with the restaurant name
+  async findByCustomerIdWithRestaurant(customerId) {
+    const [rows] = await this.#database.query(
+      `SELECT o.orderId, o.status, o.restaurantId, r.restaurantName
+       FROM \`Order\` o
+       JOIN Restaurant r ON o.restaurantId = r.restaurantId
+       WHERE o.customerId = ? AND o.status != ?
+       ORDER BY o.orderId DESC`,
+      [customerId, "Incomplete Cart"],
+    );
+    return rows; // returns orders with restaurant name — used on the customer home page
+  }
+
   async findItemsByOrderId(orderId) {
     const [rows] = await this.#database.query(
       `SELECT * FROM OrderItem WHERE orderId = ?`, // fetches all items belonging to an order
@@ -80,6 +93,4 @@ export default class OrderRepository {
       [status, orderId], // parameterized — prevents SQL injection
     );
   }
-
-  // DELETE
 }

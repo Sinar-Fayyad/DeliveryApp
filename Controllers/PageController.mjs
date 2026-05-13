@@ -3,9 +3,9 @@ import { sendHTML } from "../Utils/sendHTML.mjs"; // sends a static HTML file wi
 import { sendCSS } from "../Utils/sendCSS.mjs"; // reads and sends a CSS file from Views/Styles/
 import { renderHTML } from "../Utils/renderHTML.mjs"; // renders an HTML template with injected data
 import { verifyToken } from "../Utils/token.mjs"; // reads and verifies the JWT from the request cookie
-import { HTTP_STATUS } from "../Utils/constants.mjs"; // HTTP status code constants
+import { HTTP_STATUS, OrderStatus } from "../Utils/constants.mjs"; // HTTP status code constants
 import RestaurantRepository from "../Database/RestaurantRepository.mjs"; // reads restaurant and menu data from the DB
-import OrderRepository from "../Database/OrderRepository.mjs"; // reads the customer's active cart for this restaurant
+import OrderRepository from "../Database/OrderRepository.mjs"; // reads the customer's active cart and orders
 
 const restaurantRepo = new RestaurantRepository(); // single instance reused across all page handlers
 const orderRepo = new OrderRepository();
@@ -37,17 +37,57 @@ export const pageController = {
     }
   },
 
-  // serves GET /home — renders the customer home page with their email and restaurant list
+  // serves GET /home — renders the customer home page with their email, restaurant list, and orders
   home: async (req, res) => {
     try {
-      const { userEmail } = await verifyToken(req);
+      const { userEmail, userId } = await verifyToken(req);
       const restaurants = await restaurantRepo.findAll(); // fetches every restaurant row from the DB
       const restaurantList = restaurants.length
         ? restaurants.map(r => `<li><div class="order-meta"><a href="/restaurant/menu?id=${r.restaurantId}" style="color:var(--text); text-decoration:none; font-weight:600;">${r.restaurantName}</a><small>Tap to browse menu</small></div></li>`).join("")
         : "<li class='empty'>No restaurants available yet.</li>";
+
+      // fetch all non-incomplete orders for this customer, joined with restaurant name
+      const orders = await orderRepo.findByCustomerIdWithRestaurant(userId);
+
+      const orderList = orders.length
+        ? orders.map(o => {
+            // map status to a CSS badge suffix matching the existing badge classes in dashboard.css
+            const STATUS_SUFFIX_MAP = {
+              [OrderStatus.SUBMITTED]:       "submitted",
+              [OrderStatus.PREPARING]:       "preparing",
+              [OrderStatus.WAITING_COURIER]: "waiting",
+              [OrderStatus.ONTHEWAY]:        "ontheway",
+              [OrderStatus.ARRIVED]:         "arrived",
+              [OrderStatus.DELIVERED]:       "delivered",
+            };
+            const badgeSuffix = STATUS_SUFFIX_MAP[o.status] ?? "incomplete";
+
+            // show the "Pay & Get Order" button only when status is Arrived
+            const payButton = o.status === OrderStatus.ARRIVED
+              ? `<form method="POST" action="/order/complete" style="margin-top:0.5rem;">
+                   <input type="hidden" name="orderId" value="${o.orderId}" />
+                   <button type="submit" class="btn-add" style="width:100%;">💳 Pay &amp; Get Order</button>
+                 </form>`
+              : "";
+
+            return `
+              <li>
+                <div class="order-meta">
+                  <a href="/order?id=${o.orderId}" style="color:var(--text); text-decoration:none; font-weight:600;">${o.restaurantName}</a>
+                  <small style="font-family:monospace;">#${o.orderId.slice(0, 8)}…</small>
+                </div>
+                <div class="order-actions" style="display:flex; flex-direction:column; align-items:flex-end; gap:0.3rem;">
+                  <span class="badge badge-${badgeSuffix}">${o.status}</span>
+                  ${payButton}
+                </div>
+              </li>`;
+          }).join("")
+        : "<li class='empty'>You have no orders yet.</li>";
+
       await renderHTML(res, "User-HomeView.html", {
-        userEmail, // injected into {{userEmail}} in the view
-        restaurantList, // injected into {{restaurantList}} in the view
+        userEmail,        // injected into {{userEmail}} in the view
+        restaurantList,   // injected into {{restaurantList}} in the view
+        orderList,        // injected into {{orderList}} in the view
       });
     } catch {
       res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/login" }); // token missing or expired — send user to login instead of error page
@@ -188,4 +228,3 @@ export const pageController = {
     }
   },
 };
-
