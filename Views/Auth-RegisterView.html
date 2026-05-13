@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeliveryApp — Create Account</title>
+    <link rel="stylesheet" href="/index.css" />
+  </head>
+  <body>
+    <main>
+      <div class="brand">
+        <div class="brand-icon">🛵</div>
+        <span class="brand-name">DeliveryApp</span>
+      </div>
+
+      <h1>Create Account</h1>
+      <p class="subtitle">Join as a customer and start ordering</p>
+
+      <div id="error-msg" class="error-msg"></div>
+
+      <form id="register-form" method="POST" action="/auth/register" novalidate>
+        <label>
+          Email Address
+          <input id="email" type="email" name="userEmail" placeholder="you@example.com" autocomplete="email" required />
+        </label>
+        <label>
+          Password
+          <input id="password" type="password" name="password" placeholder="••••••••" autocomplete="new-password" required />
+        </label>
+        <button type="submit">Create Account</button>
+      </form>
+
+      <div class="divider">or</div>
+
+      <p class="form-footer">Already have an account? <a href="/login">Sign in</a></p>
+    </main>
+
+    <script>
+      const form = document.getElementById("register-form");
+      const errorMsg = document.getElementById("error-msg");
+
+      form.addEventListener("submit", (e) => {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        if (!email || !password) {
+          e.preventDefault();
+          errorMsg.textContent = "Please fill in all fields.";
+        } else if (password.length < 6) {
+          e.preventDefault();
+          errorMsg.textContent = "Password must be at least 6 characters.";
+        } else {
+          errorMsg.textContent = "";
+        }
+      });
+
+      form.querySelectorAll("input").forEach((input) => {
+        input.addEventListener("input", () => { errorMsg.textContent = ""; });
+      });
+    </script>
+  </body>
+</html>

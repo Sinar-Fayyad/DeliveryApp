@@ -1,0 +1,693 @@
+================================================================================
+  FULL-STACK WEB DEVELOPMENT — AUTHENTICATION, SESSIONS & THE REQUEST LIFECYCLE
+  A 1-Hour Teaching Session (Delivery App — Real Code Edition)
+================================================================================
+
+================================================================================
+PART 1 — THE FULL-STACK JOURNEY
+================================================================================
+
+Think of a web application as a post office.
+  - The VIEW is the citizen writing and sending a letter (the request).
+  - The ROUTER is the sorting room deciding which mailbox to put the letter in.
+  - The CONTROLLER is the clerk who opens the mailbox, reads the letter, and decides what to do.
+  - The MODEL is the company's internal rulebook — what is allowed, what is not.
+  - The REPOSITORY is the file room — it knows how to read and write records to the archive.
+  - The DATABASE is the physical archive room.
+
+Every user action on a webpage follows this exact path.
+
+--------------------------------------------------------------------------------
+STEP 1 — THE VIEW (HTML Form)
+--------------------------------------------------------------------------------
+
+The browser shows the user an HTML form. The form has two critical attributes:
+
+    <form method="POST" action="/auth/login">
+      <input type="email"    name="userEmail" />
+      <input type="password" name="password"  />
+      <button type="submit">Log in</button>
+    </form>
+
+  method="POST"       — what type of HTTP request to send
+  action="/auth/login"— the URL path to send it to
+
+When the user clicks "Log in", the browser packages the form fields into a
+request body that looks like this (URL-encoded format):
+
+    userEmail=karim%40example.com&password=secret123
+
+Key point: The browser does NOT run any code on the server. It simply
+sends a message over the network. What happens next is entirely the server's job.
+
+--------------------------------------------------------------------------------
+STEP 2 — THE REQUEST ARRIVES AT THE SERVER (index.mjs)
+--------------------------------------------------------------------------------
+
+    // index.mjs
+    const server = await http.createServer(appRouter);
+    server.listen(PORT, () => { ... });
+
+Node.js creates an HTTP server. Every single incoming request — login, logout,
+loading a page, loading a CSS file — is handed to ONE function: appRouter.
+
+appRouter is the "dispatch" function from our Router class. It is the first
+thing that runs on the server for every request.
+
+--------------------------------------------------------------------------------
+STEP 3 — THE ROUTER (Controllers/Router.mjs + Controllers/AppRouter.mjs)
+--------------------------------------------------------------------------------
+
+The router reads two things from every incoming request:
+  1. The HTTP method  (GET, POST, PUT, DELETE...)
+  2. The URL path     (/auth/login, /home, /courrier/dashboard...)
+
+    // Router.mjs — dispatch method
+    const url      = new URL(req.url, `http://${req.headers.host}`);
+    const pathname = url.pathname;  // "/auth/login"
+    const method   = req.method;   // "POST"
+
+    const match = this.#routes.find(
+      (route) => route.method === method && route.path === pathname
+    );
+
+    const handler = match ? match.handler : this.#notFound;
+    await handler(req, res);
+
+The router scans a list of registered routes until it finds one where
+BOTH the method and path match. If found, it calls the handler function.
+If not, it sends a 404 Not Found response.
+
+The routes are registered in AppRouter.mjs:
+
+    router.add("POST", "/auth/login",  authController.login);
+    router.add("GET",  "/home",        pageController.home);
+    router.add("GET",  "/courrier/dashboard", courrierController.dashboard);
+
+Think of this as a lookup table:
+  POST /auth/login        →  authController.login
+  GET  /home              →  pageController.home
+  GET  /courrier/dashboard →  courrierController.dashboard
+
+The router does NOT know about authentication. It only routes.
+Authentication is the controller's responsibility.
+
+--------------------------------------------------------------------------------
+STEP 4 — THE CONTROLLER (Controllers/AuthController.mjs)
+--------------------------------------------------------------------------------
+
+The controller receives (req, res) and is responsible for:
+  1. Parsing the request body (getting the data the user submitted)
+  2. Calling the model to do business logic
+  3. Building and sending the response
+
+    // AuthController.mjs — login handler
+    login: async (req, res) => {
+      try {
+        const { userEmail, password } = await parseBody(req);
+        const customer = await Customer.login(userEmail, password);
+        issueToken(res, customer, UserRoles.CUSTOMER);
+        res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/home" });
+        res.end();
+      } catch {
+        errorController(HTTP_STATUS.UNAUTHORIZED, req, res);
+      }
+    }
+
+parseBody() reads the raw request stream and decodes the form data.
+Customer.login() is the model call — verify that the user exists and the password is correct.
+issueToken() is the authentication step — we'll explain this in depth shortly.
+res.writeHead(302) tells the browser to redirect to /home.
+
+The controller is also the right place to "guard" protected actions.
+Before doing anything that requires the user to be logged in, the controller
+calls verifyToken(req). This is the authorization guard. If the user is not
+logged in (no cookie, or expired token), verifyToken throws an error, the
+catch block runs, and the user is redirected to the login page.
+
+    // PageController.mjs — protected page
+    home: async (req, res) => {
+      try {
+        const { userEmail } = verifyToken(req); // GUARD: throws if not logged in
+        // ... render the home page
+      } catch {
+        res.writeHead(302, { Location: "/login" }); // REDIRECT: not logged in
+        res.end();
+      }
+    }
+
+--------------------------------------------------------------------------------
+STEP 5 — THE MODEL (Models/Customer.mjs + Models/User.mjs)
+--------------------------------------------------------------------------------
+
+The model contains the business logic and rules. It does NOT talk to HTTP.
+It does NOT know about req or res. Its job is purely:
+  - What does it mean to "register" a customer?
+  - What does it mean to "log in" a customer?
+
+    // Customer.mjs
+    static async login(email, password) {
+      const repo = new CustomerRepository();
+      const accountExists = await repo.findByEmail(email);
+      if (!accountExists) throw new Error("Email not found");
+      const checkPassword = await bcrypt.compare(password, accountExists.passwordHash);
+      if (!checkPassword) throw new Error("Wrong Password");
+      return accountExists;
+    }
+
+Notice:
+  - It creates a repository to access the database.
+  - It uses bcrypt.compare() to safely check the password without ever storing it in plain text.
+  - It throws errors — the controller's try/catch will handle them.
+  - It does NOT write responses. It does NOT know about HTTP.
+
+The abstract base class User.mjs enforces a contract:
+  Every user type (Customer, Courrier, RestaurantManager) MUST implement
+  register() and login(). If they don't, calling those methods will throw.
+  This is the design pattern known as "Template Method" or Abstract Class.
+
+--------------------------------------------------------------------------------
+STEP 6 — THE REPOSITORY (Database/CustomerRepository.mjs)
+--------------------------------------------------------------------------------
+
+The repository is the only layer that knows about SQL and the database.
+It does NOT contain business logic. It only contains database operations.
+
+    // CustomerRepository.mjs
+    async findByEmail(email) {
+      const [rows] = await this.#database.query(
+        `SELECT * FROM Customer WHERE email = ?`,
+        [email]
+      );
+      if (rows.length === 0) return null;
+      return rows[0];
+    }
+
+The "?" is a parameterized placeholder. The actual value is passed separately.
+This is critical for security: it prevents SQL Injection attacks.
+Never build SQL by concatenating strings: "WHERE email = '" + email + "'"
+
+The repository uses a Singleton Database (Database/Database.mjs).
+Singleton means ONE and only ONE database connection pool exists for the
+entire lifetime of the server. Every repository shares the same pool.
+This saves resources and prevents connection exhaustion.
+
+================================================================================
+PART 2 — COOKIES, SESSIONS & JWT
+================================================================================
+
+BACKGROUND: WHY DOES THIS PROBLEM EXIST?
+-----------------------------------------
+
+HTTP is a stateless protocol.
+
+That means every request is completely independent. The server has no memory
+of who sent the previous request. After you log in successfully, the NEXT
+request — loading /home — arrives and the server has forgotten you.
+
+We need a way for the browser to prove its identity on EVERY request.
+There are three classic solutions:
+
+  1. Plain Cookies
+  2. Server-Side Sessions
+  3. JSON Web Tokens (JWT)
+
+--------------------------------------------------------------------------------
+SOLUTION 1 — PLAIN COOKIES
+--------------------------------------------------------------------------------
+
+A cookie is a small piece of text that the server tells the browser to store
+and send back on every future request to the same domain.
+
+HOW IT WORKS:
+  1. User logs in with correct credentials.
+  2. Server responds with a "Set-Cookie" header.
+  3. Browser stores the cookie automatically.
+  4. On every future request to this domain, the browser automatically
+     includes the cookie in the "Cookie" request header.
+
+Example server response header:
+    Set-Cookie: userId=abc-123; HttpOnly; Path=/; Max-Age=3600
+
+Example browser request header (on every subsequent request):
+    Cookie: userId=abc-123
+
+PROBLEM WITH PLAIN COOKIES:
+  The value "abc-123" is stored as-is. Anyone who intercepts or reads
+  the cookie knows the userId. Worse: anyone who edits the cookie can
+  pretend to be someone else. There is no verification.
+
+  Example attack:
+    - Server sets Cookie: userId=5  (normal user)
+    - Attacker changes cookie to: userId=1  (becomes admin)
+    - Server has no way to detect tampering
+
+This is why plain cookies alone are NOT safe for authentication.
+
+COOKIE SECURITY FLAGS (always use these):
+  HttpOnly     — JavaScript running in the browser CANNOT read this cookie.
+                 Protects against XSS (Cross-Site Scripting) attacks.
+  SameSite=Strict — Cookie is NOT sent with cross-site requests.
+                 Protects against CSRF (Cross-Site Request Forgery) attacks.
+  Max-Age=3600 — Cookie expires in 3600 seconds (1 hour).
+                 Prevents indefinite sessions.
+  Secure       — Cookie is only sent over HTTPS connections.
+                 In production, ALWAYS add this flag.
+
+--------------------------------------------------------------------------------
+SOLUTION 2 — SERVER-SIDE SESSIONS
+--------------------------------------------------------------------------------
+
+Sessions solve the tampering problem by keeping sensitive data on the SERVER
+and only giving the browser an opaque, random ID.
+
+HOW IT WORKS:
+  1. User logs in.
+  2. Server creates a "session" object in memory (or a database):
+       sessions["session_8x7k2m"] = { userId: "abc-123", role: "Customer" }
+  3. Server sends only the session ID as a cookie:
+       Set-Cookie: sessionId=session_8x7k2m; HttpOnly; ...
+  4. On every future request, the browser sends back the session ID.
+  5. The server looks up the session ID in its storage to find who this is.
+
+ADVANTAGES:
+  - The actual user data never leaves the server.
+  - To "invalidate" a session (logout), just delete it from storage.
+  - Session data can be updated anytime without touching the client.
+
+DISADVANTAGES:
+  - The server must store ALL active sessions in memory or a database.
+  - If you have multiple servers (load balancing), they must all share
+    the same session storage (adds infrastructure complexity).
+  - Every request requires a database lookup to resolve the session ID.
+  - Does not scale as well as stateless approaches.
+
+WHEN TO USE: Small to medium applications with a single server.
+  Frameworks like Express.js + express-session use this approach.
+
+HOW IT WORKS IN THIS PROJECT:
+  This app uses server-side sessions stored in a MySQL table called Session.
+  The token is NOT a JWT — it is a random, opaque 64-character hex string
+  that means nothing on its own. Its only purpose is to act as a key into
+  the Session table.
+
+  1. User logs in with correct credentials.
+
+     // token.mjs — issueToken()
+     const token = randomBytes(32).toString("hex");
+     // → "a3f8c1d4e9b2...  (64 random hex characters, unpredictable)"
+
+     await db.query(
+       "INSERT INTO Session (token, userId, role, userEmail, restaurantName) VALUES (?, ?, ?, ?, ?)",
+       [token, user.userId, role, user.email ?? null, user.restaurantName ?? null]
+     );
+     res.setHeader("Set-Cookie", `token=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=3600`);
+
+  2. The browser stores this cookie and sends it on every future request.
+     It is just an opaque string — useless to anyone who intercepts it
+     unless they also have access to the server's database.
+
+  3. On a protected request, the server reads the token and looks it up:
+
+     // token.mjs — verifyToken()
+     const { token } = parseCookies(req);
+     if (!token) throw new Error("No token found");
+     const [rows] = await db.query("SELECT * FROM Session WHERE token = ?", [token]);
+     if (!rows.length) throw new Error("Invalid or expired session");
+     return rows[0]; // { userId, role, userEmail, restaurantName }
+
+     There is no cryptography here — just a database lookup.
+     If the token exists in the table, the user is authenticated.
+     The returned row gives the controller everything it needs (userId, role, etc.).
+
+  4. On logout, the session row is deleted:
+
+     // token.mjs — revokeToken()
+     const { token } = parseCookies(req);
+     if (token) await db.query("DELETE FROM Session WHERE token = ?", [token]);
+
+     The cookie is then cleared on the client side with Max-Age=0.
+     Because the row no longer exists, any future request with the same
+     cookie value will fail the lookup and be treated as unauthenticated.
+
+--------------------------------------------------------------------------------
+SOLUTION 3 — JSON WEB TOKENS (JWT)
+--------------------------------------------------------------------------------
+
+JWT is a stateless approach. The server stores nothing. The user carries
+a tamper-proof "signed" token that contains their identity directly.
+
+ANATOMY OF A JWT:
+  A JWT has three parts separated by dots:
+    eyJhbGciOiJIUzI1NiJ9 . eyJ1c2VySWQiOiJhYmMtMTIzIn0 . SflKxwRJSMeKKF2QT4fwp
+
+  Part 1 — HEADER (base64 encoded):
+    { "alg": "HS256", "typ": "JWT" }
+    Tells what signing algorithm to use.
+
+  Part 2 — PAYLOAD (base64 encoded):
+    { "userId": "abc-123", "role": "Customer", "exp": 1713888000 }
+    The actual data you want to store. Readable by anyone.
+    NOTE: Do NOT put passwords or secrets in the payload. It is NOT encrypted.
+
+  Part 3 — SIGNATURE:
+    HMAC_SHA256(base64(header) + "." + base64(payload), SECRET_KEY)
+    This is what makes JWT tamper-proof. It is a cryptographic hash of the
+    header + payload, signed using a secret key only the server knows.
+
+WHY IS IT TAMPER-PROOF?
+  If an attacker modifies the payload (e.g., changes role from "Customer"
+  to "Manager"), the signature will no longer match. The server rejects it.
+  The attacker cannot forge a valid signature without knowing the secret key.
+
+HOW IT WORKS IN THEORY (not used in this project — kept for your understanding):
+  1. User logs in successfully.
+
+     const token = jwt.sign(
+       { userId: user.userId, role: "Customer", userEmail: user.email },
+       process.env.JWT_SECRET,       // the server's secret key (in .env)
+       { expiresIn: "1h" }           // token expires automatically after 1 hour
+     );
+     res.setHeader("Set-Cookie", `token=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=3600`);
+
+  2. The signed JWT is sent as an HttpOnly cookie.
+     Browser stores it, sends it on every future request.
+
+  3. On a protected request, the server reads and verifies the token:
+
+     const { token } = parseCookies(req);
+     if (!token) throw new Error("No token");
+     return jwt.verify(token, process.env.JWT_SECRET); // verify signature + expiry
+
+     jwt.verify() does two things simultaneously:
+       a) Checks that the signature is valid (token was not tampered with)
+       b) Checks that the token has not expired
+     If either fails, it throws an error. No database query needed.
+
+  4. The decoded payload is returned:
+     { userId: "abc-123", role: "Customer", userEmail: "karim@example.com" }
+
+ADVANTAGES OF JWT:
+  - Stateless: the server stores NOTHING. No session database needed.
+  - Scales perfectly: any server can verify any token using the shared secret.
+  - Self-contained: the token carries all the information needed.
+  - Works across domains (useful for APIs and mobile apps).
+
+DISADVANTAGES OF JWT:
+  - Cannot be invalidated before expiry (no "logout from all devices").
+    (Advanced solution: token blacklist in Redis, but that adds statefulness.)
+  - Payload is only encoded, NOT encrypted — visible to anyone who has the token.
+  - If the secret key leaks, ALL tokens are compromised.
+
+WHEN TO USE: APIs, microservices, multi-server deployments, mobile backends.
+
+--------------------------------------------------------------------------------
+SIDE-BY-SIDE COMPARISON
+--------------------------------------------------------------------------------
+
+                    Plain Cookie    Session         JWT
+                    ------------    -------         ---
+  Server stores?    Nothing         Session data    Nothing (stateless)
+  Client stores?    userId (plain)  sessionId       Signed token
+  Tamper-proof?     No              Yes             Yes
+  Scales easily?    Yes             No (shared DB)  Yes
+  Instant logout?   Yes             Yes             No (must wait for expiry)
+  Sensitive data?   Exposed         Safe (server)   Encoded (not encrypted)
+  Used in this app? No              YES             No
+
+================================================================================
+PART 3 — AUTHORIZATION AS A GUARD
+================================================================================
+
+AUTHENTICATION vs AUTHORIZATION — THE KEY DIFFERENCE:
+
+  AUTHENTICATION answers: "Who are you?"
+    Verifying identity — checking email + password, issuing a session token.
+
+  AUTHORIZATION answers: "Are you allowed to do this?"
+    Checking if the authenticated user has the right ROLE or PERMISSION
+    to perform the requested action.
+
+--------------------------------------------------------------------------------
+THE GUARD PATTERN IN THIS PROJECT
+--------------------------------------------------------------------------------
+
+Every protected controller action starts with verifyToken(req).
+This is the guard. If it throws, the action is blocked. If it succeeds,
+the session row (userId, role, userEmail, ...) is available to the controller.
+
+PATTERN — Authentication-only guard (you just need to be logged in):
+
+    // OrderController.mjs — view order
+    view: async (req, res) => {
+      try {
+        verifyToken(req);  // GUARD: any logged-in user can view their order
+        // ... fetch and render the order
+      } catch {
+        errorController(HTTP_STATUS.UNAUTHORIZED, req, res);
+      }
+    }
+
+PATTERN — Authorization guard (you need to be the RIGHT user):
+
+    // OrderController.mjs — cancel order
+    cancel: async (req, res) => {
+      try {
+        const { userId } = verifyToken(req);          // GUARD: must be logged in
+        const order = await repository.findById(orderId);
+        if (order.customerId !== userId) {            // GUARD: must OWN the order
+          return errorController(HTTP_STATUS.UNAUTHORIZED, req, res);
+        }
+        // ... cancel the order
+      } catch { ... }
+    }
+
+    This prevents Customer A from cancelling Customer B's order.
+    verifyToken gives us userId. We compare it to order.customerId.
+    If they don't match — reject.
+
+PATTERN — Role-based authorization (you need to be a MANAGER):
+
+    // RestaurantController.mjs — add menu item
+    addMenuItem: async (req, res) => {
+      try {
+        const { userId } = verifyToken(req);   // GUARD: must be logged in
+        const restaurant = await restaurantRepo.findByManagerId(userId);
+        if (!restaurant) {                     // GUARD: must OWN a restaurant
+          return errorController(HTTP_STATUS.NOT_FOUND, req, res);
+        }
+        // ... add item to this manager's restaurant only
+      } catch { ... }
+    }
+
+    A customer's session has role: "Customer" and no restaurant.
+    Even if they somehow hit POST /restaurant/menu/add, findByManagerId()
+    returns null and the guard blocks them.
+
+HOW THE ROLE IS STORED IN THE SESSION:
+
+    // token.mjs — issueToken()
+    // The role is written into the Session row at login time.
+    await db.query(
+      "INSERT INTO Session (token, userId, role, userEmail, restaurantName) VALUES (?, ?, ?, ?, ?)",
+      [token, user.userId, role, user.email ?? null, user.restaurantName ?? null]
+    );
+
+    // authController — customer login
+    issueToken(res, customer, UserRoles.CUSTOMER);  // role = "Customer"
+
+    // courrierController — courrier login
+    issueToken(res, courrier, UserRoles.COURRIER);  // role = "Courrier"
+
+    // restaurantController — manager login
+    issueToken(res, manager, UserRoles.MANAGER);    // role = "Manager"
+
+Each user type receives a different role stored in the Session table.
+verifyToken() returns the full row, so the role is always available:
+
+    const { userId, role } = await verifyToken(req);
+    if (role !== UserRoles.MANAGER) {
+      return errorController(HTTP_STATUS.UNAUTHORIZED, req, res);
+    }
+
+This is role-based access control (RBAC) — the industry standard pattern
+for authorization in web applications.
+
+================================================================================
+PART 4 — REDIRECTION
+================================================================================
+
+HTTP 302 (Temporary Redirect) is a response that tells the browser:
+"The content you want is at a different URL. Go there instead."
+
+    res.writeHead(302, { Location: "/home" });
+    res.end();
+
+The browser automatically makes a new GET request to "/home".
+The user sees the home page without any manual navigation.
+
+WHERE REDIRECTS ARE USED IN THIS PROJECT:
+
+  After successful login:
+    res.writeHead(302, { Location: "/home" });
+    — Takes the customer to their home page.
+
+  After successful logout:
+    res.writeHead(302, { Location: "/login" });
+    — Takes the user back to the login page.
+
+  When token is missing or expired (guard fails):
+    res.writeHead(302, { Location: "/login" });
+    — Automatically redirects unauthenticated users to login.
+
+  After placing an order:
+    res.writeHead(302, { Location: `/order?id=${orderId}` });
+    — Sends the customer straight to their new order's detail page.
+
+THE POST-REDIRECT-GET PATTERN (PRG):
+  When a form is submitted (POST) and the server redirects to a GET page,
+  the browser shows the GET page. If the user hits "Refresh", only the GET
+  request repeats — NOT the form submission. This prevents accidental
+  duplicate orders or double registrations.
+
+  WITHOUT PRG: POST /order/create → render response
+    User refreshes → POST /order/create again → duplicate order!
+
+  WITH PRG:    POST /order/create → 302 → GET /order?id=xxx → render response
+    User refreshes → GET /order?id=xxx again → just re-loads the page. Safe.
+
+================================================================================
+PART 5 — END-TO-END LOGIN WALKTHROUGH
+================================================================================
+
+Let's trace a complete login through every layer of the system.
+
+SCENARIO: Customer visits the login page, enters email + password, submits.
+
+--------------------------------------------------------------------------------
+1. BROWSER sends:
+   POST /auth/login HTTP/1.1
+   Content-Type: application/x-www-form-urlencoded
+   Body: userEmail=karim@example.com&password=secret123
+
+2. SERVER (index.mjs) receives the request → calls appRouter
+
+3. ROUTER (Router.mjs — dispatch):
+   method = "POST", pathname = "/auth/login"
+   Scans route table → finds: POST /auth/login → authController.login
+   Calls: await authController.login(req, res)
+
+4. CONTROLLER (AuthController.mjs — login):
+   a. await parseBody(req)
+      → reads the body stream → returns { userEmail: "karim@...", password: "secret123" }
+
+   b. await Customer.login(userEmail, password)
+      → delegates to the MODEL
+
+5. MODEL (Customer.mjs — login):
+   a. new CustomerRepository() → Database.getInstance() (Singleton)
+   b. await repo.findByEmail("karim@example.com")
+      → REPOSITORY executes: SELECT * FROM Customer WHERE email = ?
+      → DB returns a row: { userId: "abc-123", email: "...", passwordHash: "$2b$..." }
+
+   c. bcrypt.compare("secret123", "$2b$...")
+      → returns true  (password matches)
+
+   d. returns the DB row to the controller
+
+6. CONTROLLER (back in authController.login):
+   c. issueToken(res, customer, UserRoles.CUSTOMER)
+      → randomBytes(32).toString("hex")
+      → generates: "a3f8c1d4e9b27f..." (64-char random hex, unpredictable)
+      → INSERT INTO Session (token, userId, role, userEmail, ...) VALUES (...)
+      → res.setHeader("Set-Cookie", "token=a3f8c1...; HttpOnly; Path=/; SameSite=Strict; Max-Age=3600")
+
+   d. res.writeHead(302, { Location: "/home" })
+   e. res.end()
+
+7. BROWSER receives:
+   HTTP/1.1 302 Found
+   Set-Cookie: token=a3f8c1...; HttpOnly; ...
+   Location: /home
+
+   → Browser stores the cookie (cannot be read by JavaScript — HttpOnly)
+   → Browser automatically sends GET /home
+
+8. BROWSER sends:
+   GET /home HTTP/1.1
+   Cookie: token=a3f8c1...
+
+9. ROUTER: GET /home → pageController.home
+
+10. CONTROLLER (PageController.mjs — home):
+    a. verifyToken(req)
+       → parseCookies(req) → extracts "token" value from Cookie header
+       → SELECT * FROM Session WHERE token = 'a3f8c1...'
+       → row found → returns { userId: "abc-123", role: "Customer", userEmail: "karim@..." }
+       → no cryptography — just a database lookup
+
+    b. restaurantRepo.findAll()
+       → REPOSITORY: SELECT * FROM Restaurant
+       → returns list of restaurants
+
+    c. renderHTML(res, "User-HomeView.html", { userEmail, restaurantList })
+       → reads the HTML template, replaces {{userEmail}} and {{restaurantList}}
+       → res.writeHead(200), res.end(html)
+
+11. BROWSER renders the home page. The customer is now logged in.
+--------------------------------------------------------------------------------
+
+WHAT HAPPENS IF THE TOKEN IS NOT IN THE DATABASE?
+(e.g. after logout, or if someone invents a fake token)
+
+Step 10a: SELECT * FROM Session WHERE token = ? → 0 rows
+  → verifyToken() throws "Invalid or expired session"
+  → catch block runs
+  → res.writeHead(302, { Location: "/login" })
+  → Browser redirected back to login
+
+WHAT HAPPENS IF SOMEONE COPIES AN OLD TOKEN AFTER LOGOUT?
+
+Step 10a: The row was deleted by revokeToken() at logout time.
+  → SELECT * FROM Session WHERE token = ? → 0 rows
+  → Same error → redirected to login
+  → The stolen token is permanently useless because the server-side record
+    no longer exists. This is why server-side sessions give instant, reliable
+    logout — something JWT cannot guarantee.
+
+================================================================================
+SUMMARY — THE LAYERS AND THEIR RESPONSIBILITIES
+================================================================================
+
+  VIEW (HTML)          Shows the user interface. Sends HTTP requests via forms.
+  ROUTER               Maps (method + path) to the correct controller handler.
+  CONTROLLER           Orchestrates: parses input, calls model, sends response.
+                       Also runs the authentication/authorization guard.
+  MODEL                Contains business logic and rules. Throws on failure.
+  REPOSITORY           Executes SQL. Returns raw data. Knows nothing about HTTP.
+  DATABASE (Singleton) Manages the connection pool. Executes parameterized queries.
+
+  TOKEN (Session)      Opaque 64-char hex stored in DB. Sent as an HttpOnly cookie.
+  issueToken()         Called after login. Generates token, writes Session row, sets cookie.
+  verifyToken()        Called at the start of every protected handler. Looks up Session row.
+  revokeToken()        Called on logout. Deletes the Session row — instant invalidation.
+
+================================================================================
+KEY SECURITY PRINCIPLES DEMONSTRATED IN THIS PROJECT
+================================================================================
+
+  1. Passwords are HASHED with bcrypt — never stored in plain text.
+  2. Session tokens are RANDOM and OPAQUE — a 64-char hex string with no
+     meaning outside the database. Guessing a valid token is computationally
+     impossible (2^256 possibilities).
+  3. Cookies are HttpOnly — JavaScript cannot steal the token (XSS protection).
+  4. Cookies are SameSite=Strict — CSRF protection.
+  5. SQL uses parameterized queries (?) — SQL Injection protection.
+  6. Logout DELETES the Session row — stolen tokens are immediately invalidated,
+     not just forgotten by the browser.
+  7. Ownership checks (order.customerId !== userId) — horizontal privilege escalation protection.
+  8. DB is a Singleton — prevents connection pool exhaustion.
+
+================================================================================
+END OF SESSION
+================================================================================

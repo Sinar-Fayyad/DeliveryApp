@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeliveryApp — {{restaurantName}}</title>
+    <link rel="stylesheet" href="/dashboard.css" />
+  </head>
+  <body>
+    <nav>
+      <a class="brand" href="/home">
+        <div class="brand-icon">🍽️</div>
+        <span class="brand-name">{{restaurantName}}</span>
+      </a>
+      <div class="nav-right">
+        <a href="/home" style="font-size:0.85rem; color:var(--text-muted); text-decoration:none; font-weight:600;">← Home</a>
+      </div>
+    </nav>
+
+    <div class="container">
+      <div class="page-header">
+        <div>
+          <h1><span>{{restaurantName}}</span></h1>
+          <p>Browse the menu and add items to your cart</p>
+        </div>
+      </div>
+
+      <!-- Menu -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Menu</span>
+        </div>
+        <ul class="item-list">
+          {{menuItems}}
+        </ul>
+      </div>
+
+      <!-- Cart -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Your Cart</span>
+          <span style="font-size:0.85rem; color:var(--text-muted);">Total: <strong style="color:var(--red);">${{totalPrice}}</strong></span>
+        </div>
+        <ul class="item-list" id="cart-list">
+          {{cartItems}}
+        </ul>
+        <form id="checkout-form" method="POST" action="/order/create" style="margin-top:1.2rem;">
+          <input type="hidden" name="restaurantId" value="{{restaurantId}}" />
+          <button type="submit" class="btn-primary" id="checkout-btn" {{checkoutDisabled}}>Place Order</button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      // Disable checkout button with a tooltip when cart is empty
+      const checkoutBtn = document.getElementById("checkout-btn");
+
+      checkoutBtn.addEventListener("click", (e) => {
+        if (checkoutBtn.disabled) {
+          e.preventDefault();
+        }
+      });
+
+      // Visual feedback when adding to cart
+      document.querySelectorAll("form[action='/cart/add']").forEach((form) => {
+        form.addEventListener("submit", () => {
+          const btn = form.querySelector("button");
+          if (btn) {
+            btn.textContent = "Adding…";
+            btn.disabled = true;
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,271 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+  --red: #e8181b;
+  --red-dark: #b81215;
+  --red-glow: rgba(232, 24, 27, 0.15);
+  --black: #0a0a0a;
+  --black-2: #111111;
+  --black-3: #181818;
+  --black-4: #222222;
+  --border: rgba(255,255,255,0.07);
+  --border-hover: rgba(255,255,255,0.14);
+  --text: #f0f0f0;
+  --text-muted: #777;
+  --text-soft: #aaa;
+  --white: #ffffff;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(232, 24, 27, 0.18), transparent 35%),
+    radial-gradient(circle at top right, rgba(62, 32, 32, 0.12), transparent 30%),
+    linear-gradient(135deg, var(--black), var(--red-dark));
+  background-attachment: fixed;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Card container */
+main {
+  background: linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--red);
+  border-radius: 24px;
+  padding: 2.8rem 2.5rem;
+  width: 100%;
+  max-width: 420px;
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    0 20px 60px rgba(0,0,0,0.5),
+    0 0 40px rgba(232, 24, 27, 0.08);
+  animation: slideUp 0.4s ease both;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Logo / Brand */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 2rem;
+}
+
+.brand-icon {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, rgba(232, 24, 27, 0.18), rgba(232, 24, 27, 0.05));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: 0 0 16px var(--red-glow), inset 0 0 10px rgba(255,255,255,0.03);
+}
+
+.brand-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.6rem;
+  letter-spacing: 2px;
+  color: var(--white);
+}
+
+/* Headings */
+h1 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2rem;
+  letter-spacing: 2px;
+  color: var(--white);
+  margin-bottom: 0.3rem;
+}
+
+.subtitle {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+}
+
+/* Form layout */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+input {
+  background: var(--black-3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  padding: 12px 14px;
+  font-size: 0.95rem;
+  font-family: 'DM Sans', sans-serif;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+
+input::placeholder {
+  color: #444;
+}
+
+input:focus {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px var(--red-glow);
+}
+
+/* Submit button */
+button[type="submit"],
+button:not(.link-btn) {
+  background: var(--red);
+  color: var(--white);
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.1rem;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+  margin-top: 0.5rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 20px var(--red-glow);
+}
+
+button[type="submit"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, transparent 50%, rgba(255,255,255,0.06) 100%);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+button[type="submit"]:hover {
+  background: var(--red-dark);
+  box-shadow: 0 0 28px rgba(232, 24, 27, 0.3);
+}
+
+button[type="submit"]:hover::after {
+  opacity: 1;
+}
+
+button[type="submit"]:active {
+  transform: scale(0.98);
+}
+
+/* Back button (top-right) */
+.back {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--white);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.2px;
+  background: rgba(232, 24, 27, 0.18);
+  border: 1px solid rgba(232, 24, 27, 0.45);
+  border-radius: 999px;
+  padding: 8px 12px;
+  box-shadow: 0 10px 28px rgba(232,24,27,0.12);
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.back:hover {
+  transform: translateY(-1px);
+  background: rgba(232, 24, 27, 0.28);
+  border-color: rgba(232, 24, 27, 0.7);
+}
+
+.back:active {
+  transform: translateY(0);
+}
+
+/* Bottom link */
+.form-footer {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 1.2rem;
+}
+
+.form-footer a {
+  color: var(--red);
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.2s;
+}
+
+.form-footer a:hover {
+  color: #ff4a4d;
+  text-decoration: underline;
+}
+
+/* Divider */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin: 0.5rem 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Error message */
+.error-msg {
+  color: var(--red);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(232,24,27,0.3);
+  background: rgba(232,24,27,0.08);
+  display: none;
+}
+
+.error-msg:not(:empty) {
+  display: block;
+}

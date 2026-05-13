@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeliveryApp — Sign In</title>
+    <link rel="stylesheet" href="/index.css" />
+  </head>
+  <body>
+    <main>
+      <div class="brand">
+        <div class="brand-icon">🛵</div>
+        <span class="brand-name">DeliveryApp</span>
+      </div>
+
+      <h1>Welcome Back</h1>
+      <p class="subtitle">Sign in to your customer account</p>
+
+      <div id="error-msg" class="error-msg"></div>
+
+      <form id="login-form" method="POST" action="/auth/login" novalidate>
+        <label>
+          Email Address
+          <input id="email" type="email" name="userEmail" placeholder="you@example.com" autocomplete="email" required />
+        </label>
+        <label>
+          Password
+          <input id="password" type="password" name="password" placeholder="••••••••" autocomplete="current-password" required />
+        </label>
+        <button type="submit">Sign In</button>
+      </form>
+
+      <div class="divider">or</div>
+
+      <p class="form-footer">No account yet? <a href="/register">Create one</a></p>
+      <p class="form-footer" style="margin-top:0.5rem;">Restaurant? <a href="/restaurant/login">Restaurant login</a></p>
+      <p class="form-footer" style="margin-top:0.5rem;">Courier? <a href="/courrier/login">Courier login</a></p>
+    </main>
+
+    <script>
+      const form = document.getElementById("login-form");
+      const errorMsg = document.getElementById("error-msg");
+
+      form.addEventListener("submit", (e) => {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        if (!email || !password) {
+          e.preventDefault();
+          errorMsg.textContent = "Please fill in all fields.";
+        } else {
+          errorMsg.textContent = "";
+        }
+      });
+
+      form.querySelectorAll("input").forEach((input) => {
+        input.addEventListener("input", () => { errorMsg.textContent = ""; });
+      });
+    </script>
+  </body>
+</html>

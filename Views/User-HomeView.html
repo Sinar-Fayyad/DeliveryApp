@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeliveryApp — Home</title>
+    <link rel="stylesheet" href="/dashboard.css" />
+  </head>
+  <body>
+    <nav>
+      <a class="brand" href="/home">
+        <div class="brand-icon">🛵</div>
+        <span class="brand-name">DeliveryApp</span>
+      </a>
+      <div class="nav-right">
+        <span class="nav-user">Signed in as <span>{{userEmail}}</span></span>
+        <form method="POST" action="/auth/logout">
+          <button type="submit">Log out</button>
+        </form>
+      </div>
+    </nav>
+
+    <div class="container">
+      <div class="page-header">
+        <div>
+          <h1>Choose a <span>Restaurant</span></h1>
+          <p>Pick a restaurant to browse its menu and start ordering</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Available Restaurants</span>
+        </div>
+        <ul class="item-list" id="restaurant-list">
+          {{restaurantList}}
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      // Highlight the restaurant row when hovered (already done by CSS, but
+      // this adds an active state on click for visual feedback before navigation)
+      document.getElementById("restaurant-list").addEventListener("click", (e) => {
+        const li = e.target.closest("li");
+        if (li) li.style.opacity = "0.7";
+      });
+    </script>
+  </body>
+</html>

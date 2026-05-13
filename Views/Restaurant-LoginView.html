@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeliveryApp — Restaurant Login</title>
+    <link rel="stylesheet" href="/index.css" />
+  </head>
+  <body>
+    <a class="back" href="/login">← Back</a>
+    <main>
+      <div class="brand">
+        <div class="brand-icon">🍽️</div>
+        <span class="brand-name">DeliveryApp</span>
+      </div>
+
+      <h1>Restaurant Login</h1>
+      <p class="subtitle">Sign in to manage your restaurant</p>
+
+      <div id="error-msg" class="error-msg"></div>
+
+      <form id="restaurant-login-form" method="POST" action="/restaurant/login" novalidate>
+        <label>
+          Restaurant Name
+          <input id="restaurantName" type="text" name="restaurantName" placeholder="e.g. Pizza Palace" autocomplete="organization" required />
+        </label>
+        <label>
+          Password
+          <input id="password" type="password" name="password" placeholder="••••••••" autocomplete="current-password" required />
+        </label>
+        <button type="submit">Sign In</button>
+      </form>
+
+      <div class="divider">or</div>
+
+      <p class="form-footer">New restaurant? <a href="/restaurant/register">Register here</a></p>
+    </main>
+
+    <script>
+      const form = document.getElementById("restaurant-login-form");
+      const errorMsg = document.getElementById("error-msg");
+
+      form.addEventListener("submit", (e) => {
+        const name = document.getElementById("restaurantName").value.trim();
+        const password = document.getElementById("password").value;
+        if (!name || !password) {
+          e.preventDefault();
+          errorMsg.textContent = "Please fill in all fields.";
+        } else {
+          errorMsg.textContent = "";
+        }
+      });
+
+      form.querySelectorAll("input").forEach((input) => {
+        input.addEventListener("input", () => { errorMsg.textContent = ""; });
+      });
+    </script>
+  </body>
+</html>

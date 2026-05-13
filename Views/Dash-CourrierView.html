@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeliveryApp — Courier Dashboard</title>
+    <link rel="stylesheet" href="/dashboard.css" />
+  </head>
+  <body>
+    <nav>
+      <a class="brand" href="/courrier/dashboard">
+        <div class="brand-icon">🏍️</div>
+        <span class="brand-name">DeliveryApp</span>
+      </a>
+      <div class="nav-right">
+        <span class="nav-user">Courier Dashboard</span>
+        <form method="POST" action="/courrier/logout">
+          <button type="submit">Log out</button>
+        </form>
+      </div>
+    </nav>
+
+    <div class="container">
+      <div class="page-header">
+        <div>
+          <h1>My <span>Deliveries</span></h1>
+          <p>View and update the status of your assigned orders</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Assigned Orders</span>
+        </div>
+        <ul class="item-list" id="assignments-list">
+          {{assignments}}
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      const STATUS_CLASS_MAP = {
+        "Submitted":      "submitted",
+        "Preparing":      "preparing",
+        "On the way":     "ontheway",
+        "Delivered":      "delivered",
+        "Incomplete Cart":"incomplete",
+      };
+
+      // Apply badge classes
+      document.querySelectorAll(".badge").forEach((badge) => {
+        const rawStatus = badge.textContent.trim();
+        const suffix = STATUS_CLASS_MAP[rawStatus];
+        if (suffix) badge.className = `badge badge-${suffix}`;
+      });
+
+      // Update select to pre-select current status
+      document.querySelectorAll(".inline-form select[name='status']").forEach((select) => {
+        const li = select.closest("li");
+        const badge = li ? li.querySelector(".badge") : null;
+        if (badge) {
+          const currentStatus = badge.textContent.trim();
+          const option = [...select.options].find(o => o.value === currentStatus);
+          if (option) option.selected = true;
+        }
+      });
+
+      // Show visual feedback on status update
+      document.getElementById("assignments-list").addEventListener("submit", (e) => {
+        const form = e.target;
+        if (form.action && form.action.includes("/courrier/status")) {
+          const btn = form.querySelector("button");
+          if (btn) {
+            btn.textContent = "Updating…";
+            btn.disabled = true;
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

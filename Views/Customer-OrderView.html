@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeliveryApp — Order #{{orderId}}</title>
+    <link rel="stylesheet" href="/dashboard.css" />
+  </head>
+  <body>
+    <nav>
+      <a class="brand" href="/home">
+        <div class="brand-icon">🛵</div>
+        <span class="brand-name">DeliveryApp</span>
+      </a>
+      <div class="nav-right">
+        <a href="/home" style="font-size:0.85rem; color:var(--text-muted); text-decoration:none; font-weight:600;">← Home</a>
+      </div>
+    </nav>
+
+    <div class="container">
+      <div class="page-header">
+        <div>
+          <h1>Order <span>Details</span></h1>
+          <p style="font-family:monospace; font-size:0.78rem;">#{{orderId}}</p>
+        </div>
+        <span class="badge badge-{{orderStatus}}" id="status-badge">{{orderStatus}}</span>
+      </div>
+
+      <!-- Order Items -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Items</span>
+          <span style="font-size:0.9rem; color:var(--text-muted);">Total: <strong style="color:var(--red);">${{totalPrice}}</strong></span>
+        </div>
+        <ul class="item-list">
+          {{orderItems}}
+        </ul>
+      </div>
+
+      <!-- Cancel -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Actions</span>
+        </div>
+        <form id="cancel-form" method="POST" action="/order/cancel">
+          <input type="hidden" name="orderId" value="{{orderId}}" />
+          <button type="submit" class="btn-danger" id="cancel-btn">Cancel Order</button>
+        </form>
+        <p style="margin-top:0.8rem; font-size:0.8rem; color:var(--text-muted);">
+          Orders that are already on the way or delivered cannot be cancelled.
+        </p>
+      </div>
+    </div>
+
+    <script>
+      // Map status values to CSS badge class suffixes
+      const STATUS_CLASS_MAP = {
+        "Submitted":      "submitted",
+        "Preparing":      "preparing",
+        "On the way":     "ontheway",
+        "Delivered":      "delivered",
+        "Incomplete Cart":"incomplete",
+      };
+
+      const badge = document.getElementById("status-badge");
+      const rawStatus = badge.textContent.trim();
+      const suffix = STATUS_CLASS_MAP[rawStatus] ?? "incomplete";
+
+      // Remove any leftover inline badge class and apply the correct one
+      badge.className = `badge badge-${suffix}`;
+
+      // Confirm before cancelling
+      document.getElementById("cancel-form").addEventListener("submit", (e) => {
+        const confirmed = window.confirm("Are you sure you want to cancel this order?");
+        if (!confirmed) e.preventDefault();
+      });
+    </script>
+  </body>
+</html>

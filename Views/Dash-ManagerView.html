@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeliveryApp — {{restaurantName}}</title>
+    <link rel="stylesheet" href="/dashboard.css" />
+  </head>
+  <body>
+    <nav>
+      <a class="brand" href="/restaurant/dashboard">
+        <div class="brand-icon">🍽️</div>
+        <span class="brand-name">{{restaurantName}}</span>
+      </a>
+      <div class="nav-right">
+        <span class="nav-user">Manager Dashboard</span>
+        <form method="POST" action="/restaurant/logout">
+          <button type="submit">Log out</button>
+        </form>
+      </div>
+    </nav>
+
+    <div class="container">
+      <div class="page-header">
+        <div>
+          <h1><span>{{restaurantName}}</span></h1>
+          <p>Manage your orders and menu</p>
+        </div>
+      </div>
+
+      <!-- Pending Orders -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Pending Orders</span>
+        </div>
+        <ul class="item-list" id="orders-list">
+          {{orders}}
+        </ul>
+      </div>
+
+      <!-- Menu -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Menu Items</span>
+        </div>
+        <ul class="item-list">
+          {{menuItems}}
+        </ul>
+      </div>
+
+      <!-- Add Menu Item -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Add Menu Item</span>
+        </div>
+        <form id="add-item-form" method="POST" action="/restaurant/menu/add" novalidate>
+          <input id="item-name" type="text" name="name" placeholder="Item name" required />
+          <input id="item-price" type="number" name="price" placeholder="Price ($)" step="0.01" min="0" required />
+          <input id="item-desc" type="text" name="description" placeholder="Short description (optional)" />
+          <button type="submit" class="btn-add">+ Add Item</button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      // Apply correct badge classes to all status badges in the orders list
+      const STATUS_CLASS_MAP = {
+        "Submitted":      "submitted",
+        "Preparing":      "preparing",
+        "On the way":     "ontheway",
+        "Delivered":      "delivered",
+        "Incomplete Cart":"incomplete",
+      };
+
+      document.querySelectorAll(".badge").forEach((badge) => {
+        const rawStatus = badge.textContent.trim();
+        const suffix = STATUS_CLASS_MAP[rawStatus];
+        if (suffix) badge.className = `badge badge-${suffix}`;
+      });
+
+      // Client-side validation for add-item form
+      const addForm = document.getElementById("add-item-form");
+      addForm.addEventListener("submit", (e) => {
+        const name = document.getElementById("item-name").value.trim();
+        const price = parseFloat(document.getElementById("item-price").value);
+        if (!name || isNaN(price) || price < 0) {
+          e.preventDefault();
+          alert("Please enter a valid item name and price.");
+        }
+      });
+
+      // Confirm courier assignment
+      document.getElementById("orders-list").addEventListener("submit", (e) => {
+        const form = e.target;
+        if (form.action && form.action.includes("/order/assign")) {
+          const select = form.querySelector("select[name='courierId']");
+          if (!select || !select.value) {
+            e.preventDefault();
+            alert("Please select a courier before assigning.");
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
