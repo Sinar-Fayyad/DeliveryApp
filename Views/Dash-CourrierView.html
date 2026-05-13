@@ -65,6 +65,28 @@
         }
       });
 
+      // Delay enabling "Arrived" button after a courier receives the order
+      // (minimal UI-only delay; server enforces status flow via Order.status updates)
+      document.querySelectorAll("[data-arrived-btn]").forEach((btn) => {
+        const form = btn.closest("form");
+        const li = btn.closest("li");
+        if (!form || !li) return;
+
+        // only apply delay when currently disabled
+        if (!btn.disabled) return;
+
+        const delayMs = 10000; // 10s
+        btn.textContent = "Arrived (wait…)";
+
+        setTimeout(() => {
+          // if still disabled, enable
+          if (btn.disabled) {
+            btn.disabled = false;
+            btn.textContent = "Arrived";
+          }
+        }, delayMs);
+      });
+
       // Show visual feedback on status update
       document.getElementById("assignments-list").addEventListener("submit", (e) => {
         const form = e.target;
