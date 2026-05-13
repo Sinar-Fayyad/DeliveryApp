@@ -43,6 +43,9 @@ router.add("POST", "/restaurant/logout", restaurantController.logout); // handle
 // Restaurant Menu
 router.add("GET", "/restaurant/menu", pageController.restaurantMenu); // serves the restaurant menu page — expects ?id= query param
 router.add("POST", "/restaurant/menu/add", restaurantController.addMenuItem); // handles adding a new menu item from the manager dashboard
+router.add("POST", "/restaurant/menu/delete", restaurantController.deleteMenuItem); // handles deleting a menu item from the manager dashboard
+
+
 
 // Cart & Orders
 router.add("POST", "/cart/add", orderController.addToCart); // adds one item to the customer's in-progress cart

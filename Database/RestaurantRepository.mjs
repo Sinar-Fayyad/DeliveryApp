@@ -56,7 +56,11 @@ export default class RestaurantRepository {
     return rows; // returns all menu item rows — empty array if no items added yet
   }
 
-  // UPDATE
-
   // DELETE
+  async deleteMenuItem(itemId, restaurantId) {
+    await this.#database.query(
+      `DELETE FROM MenuItem WHERE itemId = ? AND restaurantId = ?`,
+      [itemId, restaurantId],
+    );
+  }
 }

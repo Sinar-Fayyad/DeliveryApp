@@ -84,7 +84,16 @@ export const restaurantController = {
                 <span>${i.name}</span>
                 <small>$${Number(i.price).toFixed(2)}${i.description ? ` — ${i.description}` : ""}</small>
               </div>
+
+              <div class="order-actions">
+                <form method="POST" action="/restaurant/menu/delete" class="inline-form">
+                  <input type="hidden" name="itemId" value="${i.itemId}" />
+                  <input type="hidden" name="restaurantId" value="${restaurant.restaurantId}" />
+                  <button type="submit" class="btn-remove" title="Delete">🗑️</button>
+                </form>
+              </div>
             </li>`,
+
             )
             .join("");
         }
@@ -195,6 +204,30 @@ export const restaurantController = {
     }
   },
 
+  // handles POST /restaurant/menu/delete — removes a menu item from the DB
+  deleteMenuItem: async (req, res) => {
+    try {
+      const { userId } = await verifyToken(req);
+      const { itemId, restaurantId } = await parseBody(req);
+
+      const restaurant = await restaurantRepo.findByManagerId(userId);
+      if (!restaurant || restaurant.restaurantId !== restaurantId) {
+        return errorController(HTTP_STATUS.UNAUTHORIZED, req, res);
+      }
+
+      await restaurantRepo.deleteMenuItem(itemId, restaurantId);
+
+      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, {
+        Location: "/restaurant/dashboard",
+      });
+      res.end();
+    } catch {
+      errorController(HTTP_STATUS.SERVER_ERROR, req, res);
+    }
+  },
+
+
+
   startPreparing: async (req, res) => {
     try {
       await verifyToken(req);
@@ -212,7 +245,7 @@ export const restaurantController = {
       errorController(500, req, res);
     }
   },
-  
+
   // handles POST /order/assign — assigns a courier to a submitted order and marks it Preparing
   assignCourier: async (req, res) => {
     try {

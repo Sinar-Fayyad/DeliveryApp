@@ -552,6 +552,108 @@ select:focus {
   background: var(--red);
 }
 
+/* ── Popup modal (Add Menu Item) ───────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1.2rem;
+  z-index: 1000;
+}
+
+.modal-backdrop.active {
+  display: flex;
+}
+
+.modal {
+  width: 100%;
+  max-width: 520px;
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.015)
+  );
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 1.4rem 1.4rem 1.2rem;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.45),
+    0 0 22px rgba(232, 24, 27, 0.12);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+
+.modal-title {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 1.5rem;
+  letter-spacing: 1.5px;
+  color: var(--white);
+  margin: 0;
+}
+
+.modal-close {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.modal-close:hover {
+  border-color: rgba(232, 24, 27, 0.45);
+  color: var(--black);
+  background: rgba(232, 24, 27, 0.06);
+}
+
+.modal form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.modal input {
+  background: var(--black-3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  font-family: "DM Sans", sans-serif;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  width: 100%;
+}
+
+.modal input:focus {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px var(--red-glow);
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.8rem;
+  margin-top: 0.4rem;
+}
+
 /* ── Add / Remove action buttons ─────────────────────────
    To switch + ADD button color everywhere in the app,
    change --btn-action-bg in :root above:
@@ -603,6 +705,18 @@ select:focus {
   border-color: rgba(46, 39, 39, 0.45);
   color: var(--black);
   background: rgba(232, 24, 27, 0.06);
+}
+
+.btn-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+}
+
+.btn-remove:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--red-glow);
 }
 
 .dashboard-tabs {
