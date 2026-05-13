@@ -2,9 +2,10 @@
 // They should not be affected by the development environment or device.
 
 export const OrderStatus = Object.freeze({
-  // Object.freeze() prevents any modification to this object at runtime
   DELIVERED: "Delivered",
+  ARRIVED: "Arrived",
   ONTHEWAY: "On the way",
+  WAITING_COURIER: "Waiting Courier",
   PREPARING: "Preparing",
   SUBMITTED: "Submitted",
   INCOMPLETE: "Incomplete Cart",

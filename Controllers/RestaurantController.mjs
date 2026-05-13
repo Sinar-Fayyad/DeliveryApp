@@ -19,13 +19,24 @@ export const restaurantController = {
   register: async (req, res) => {
     try {
       const { restaurantName, password } = await parseBody(req);
-      const manager = await RestaurantManager.register(restaurantName, password);
-      const existingRestaurant = await restaurantRepo.findByManagerId(manager.userId);
+      const manager = await RestaurantManager.register(
+        restaurantName,
+        password,
+      );
+      const existingRestaurant = await restaurantRepo.findByManagerId(
+        manager.userId,
+      );
       if (!existingRestaurant) {
-        await restaurantRepo.createRestaurant(v4(), restaurantName, manager.userId);
+        await restaurantRepo.createRestaurant(
+          v4(),
+          restaurantName,
+          manager.userId,
+        );
       }
       await issueToken(res, manager, UserRoles.MANAGER);
-      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/restaurant/dashboard" });
+      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, {
+        Location: "/restaurant/dashboard",
+      });
       res.end();
     } catch {
       errorController(HTTP_STATUS.BAD_REQUEST, req, res);
@@ -38,7 +49,9 @@ export const restaurantController = {
       const { restaurantName, password } = await parseBody(req);
       const manager = await RestaurantManager.login(restaurantName, password);
       await issueToken(res, manager, UserRoles.MANAGER);
-      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/restaurant/dashboard" });
+      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, {
+        Location: "/restaurant/dashboard",
+      });
       res.end();
     } catch {
       errorController(HTTP_STATUS.UNAUTHORIZED, req, res);
@@ -47,7 +60,7 @@ export const restaurantController = {
 
   logout: async (req, res) => {
     await RestaurantManager.logout(req, res);
-    res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/login" });
+    res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/" });
     res.end();
   },
 
@@ -59,44 +72,90 @@ export const restaurantController = {
       let menuItems = "<li class='empty'>No menu items yet.</li>";
       let orders = "<li class='empty'>No pending orders.</li>";
       if (restaurant) {
-        const items = await restaurantRepo.findMenuByRestaurantId(restaurant.restaurantId);
+        const items = await restaurantRepo.findMenuByRestaurantId(
+          restaurant.restaurantId,
+        );
         if (items.length) {
-          menuItems = items.map(i =>
-            `<li>
+          menuItems = items
+            .map(
+              (i) =>
+                `<li>
               <div class="order-meta">
                 <span>${i.name}</span>
                 <small>$${Number(i.price).toFixed(2)}${i.description ? ` — ${i.description}` : ""}</small>
               </div>
-            </li>`
-          ).join("");
+            </li>`,
+            )
+            .join("");
         }
-        const pendingOrders = await orderRepo.findByRestaurantId(restaurant.restaurantId);
+        const pendingOrders = await orderRepo.findByRestaurantId(
+          restaurant.restaurantId,
+        );
         if (pendingOrders.length) {
           const couriers = await courrierRepo.findAll();
           const courierOptions = couriers.length
-            ? couriers.map(c => `<option value="${c.userId}">${c.phoneNumber}</option>`).join("")
+            ? couriers
+                .map(
+                  (c) =>
+                    `<option value="${c.userId}">${c.phoneNumber}</option>`,
+                )
+                .join("")
             : `<option disabled>No couriers registered</option>`;
-          orders = pendingOrders.map(o => {
-            const statusClass = {
-              "Submitted": "submitted", "Preparing": "preparing",
-              "On the way": "ontheway", "Delivered": "delivered",
-            }[o.status] ?? "incomplete";
-            const canAssign = o.status === OrderStatus.SUBMITTED;
-            const assignForm = canAssign
-              ? `<form method="POST" action="/order/assign" class="inline-form">
-                   <input type="hidden" name="orderId" value="${o.orderId}" />
-                   <select name="courierId">${courierOptions}</select>
-                   <button type="submit" class="btn-outline">Assign Courier</button>
-                 </form>`
-              : "";
-            return `<li>
-              <div class="order-meta">
-                <span>Order <code style="font-size:0.78rem; color:var(--text-muted);">#${o.orderId.slice(0, 8)}</code></span>
-                <span class="order-status"><span class="badge badge-${statusClass}">${o.status}</span></span>
-              </div>
-              <div class="order-actions">${assignForm}</div>
-            </li>`;
-          }).join("");
+          orders = pendingOrders
+            .map((o) => {
+              const statusClass =
+                {
+                  Submitted: "submitted",
+                  Preparing: "preparing",
+                  "Waiting Courier": "waiting",
+                  "On the way": "ontheway",
+                  Arrived: "arrived",
+                  Delivered: "delivered",
+                }[o.status] ?? "incomplete";
+
+              let actions = "";
+
+              if (o.status === OrderStatus.SUBMITTED) {
+                actions = `
+      <form method="POST" action="/restaurant/order/start" class="inline-form">
+        <input type="hidden" name="orderId" value="${o.orderId}" />
+        <button type="submit" class="btn-outline">Start Preparing</button>
+      </form>
+    `;
+              }
+
+              if (o.status === OrderStatus.PREPARING) {
+                actions = `
+      <form method="POST" action="/order/assign" class="inline-form">
+        <input type="hidden" name="orderId" value="${o.orderId}" />
+        <select name="courierId">${courierOptions}</select>
+        <button type="submit" class="btn-outline">Assign Courier</button>
+      </form>
+    `;
+              }
+
+              return `
+    <li>
+      <div class="order-meta">
+        <span>
+          Order
+          <code style="font-size:0.78rem; color:var(--text-muted);">
+            #${o.orderId.slice(0, 8)}
+          </code>
+        </span>
+
+        <span class="order-status">
+          <span class="badge badge-${statusClass}">${o.status}</span>
+        </span>
+      </div>
+
+      <div class="order-actions">
+        ${actions}
+      </div>
+    </li>
+  `;
+            })
+            .join("");
         }
       }
       await renderHTML(res, "Dash-ManagerView.html", {
@@ -105,7 +164,9 @@ export const restaurantController = {
         menuItems,
       });
     } catch {
-      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/restaurant/login" });
+      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, {
+        Location: "/restaurant/login",
+      });
       res.end();
     }
   },
@@ -118,14 +179,40 @@ export const restaurantController = {
       const restaurant = await restaurantRepo.findByManagerId(userId);
       if (!restaurant) return errorController(HTTP_STATUS.NOT_FOUND, req, res);
       const itemId = v4();
-      await restaurantRepo.addMenuItem(itemId, restaurant.restaurantId, name, price, description);
-      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/restaurant/dashboard" });
+      await restaurantRepo.addMenuItem(
+        itemId,
+        restaurant.restaurantId,
+        name,
+        price,
+        description,
+      );
+      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, {
+        Location: "/restaurant/dashboard",
+      });
       res.end();
     } catch {
       errorController(HTTP_STATUS.SERVER_ERROR, req, res);
     }
   },
 
+  startPreparing: async (req, res) => {
+    try {
+      await verifyToken(req);
+
+      const { orderId } = await parseBody(req);
+
+      await orderRepo.updateStatus(orderId, OrderStatus.PREPARING);
+
+      res.writeHead(302, {
+        Location: "/restaurant/dashboard",
+      });
+
+      res.end();
+    } catch {
+      errorController(500, req, res);
+    }
+  },
+  
   // handles POST /order/assign — assigns a courier to a submitted order and marks it Preparing
   assignCourier: async (req, res) => {
     try {
@@ -138,8 +225,10 @@ export const restaurantController = {
         return errorController(HTTP_STATUS.UNAUTHORIZED, req, res);
       }
       await DeliveryAssignment.create(orderId, courierId);
-      await orderRepo.updateStatus(orderId, OrderStatus.PREPARING);
-      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/restaurant/dashboard" });
+      await orderRepo.updateStatus(orderId, OrderStatus.WAITING_COURIER);
+      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, {
+        Location: "/restaurant/dashboard",
+      });
       res.end();
     } catch {
       errorController(HTTP_STATUS.SERVER_ERROR, req, res);

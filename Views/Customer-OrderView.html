@@ -46,6 +46,7 @@
           <input type="hidden" name="orderId" value="{{orderId}}" />
           <button type="submit" class="btn-danger" id="cancel-btn">Cancel Order</button>
         </form>
+        {{completeOrderButton}}
         <p style="margin-top:0.8rem; font-size:0.8rem; color:var(--text-muted);">
           Orders that are already on the way or delivered cannot be cancelled.
         </p>
@@ -55,11 +56,13 @@
     <script>
       // Map status values to CSS badge class suffixes
       const STATUS_CLASS_MAP = {
-        "Submitted":      "submitted",
-        "Preparing":      "preparing",
-        "On the way":     "ontheway",
-        "Delivered":      "delivered",
-        "Incomplete Cart":"incomplete",
+        "Submitted": "submitted",
+        "Preparing": "preparing",
+        "Waiting Courier": "waiting",
+        "On the way": "ontheway",
+        "Arrived": "arrived",
+        "Delivered": "delivered",
+        "Incomplete Cart": "incomplete",
       };
 
       const badge = document.getElementById("status-badge");

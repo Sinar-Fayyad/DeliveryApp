@@ -33,7 +33,7 @@ export const authController = {
 
   logout: async (req, res) => {
     await Customer.logout(req, res);
-    res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/login" });
+    res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: "/" });
     res.end();
   },
 };

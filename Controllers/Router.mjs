@@ -27,11 +27,20 @@ export class Router {
 
     const handler = match ? match.handler : this.#notFound; // uses the matched handler or falls back to 404
 
+
     try {
+      if (typeof handler !== "function") {
+        throw new TypeError(`Route handler is not a function. method=${method} path=${pathname} handlerType=${typeof handler}`);
+      }
       await handler(req, res); // calls the handler — await supports async controllers
     } catch (error) {
       console.log(error);
-      errorController(HTTP_STATUS.SERVER_ERROR, req, res);
+      try {
+        errorController(HTTP_STATUS.SERVER_ERROR, req, res);
+      } catch (e) {
+        console.log(e);
+      }
+
     }
   };
 }

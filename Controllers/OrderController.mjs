@@ -21,11 +21,22 @@ export const orderController = {
           return errorController(HTTP_STATUS.BAD_REQUEST, req, res);
         }
         const orderId = v4();
-        await repository.createOrder(orderId, userId, restaurantId, OrderStatus.INCOMPLETE);
+        await repository.createOrder(
+          orderId,
+          userId,
+          restaurantId,
+          OrderStatus.INCOMPLETE,
+        );
         cartOrder = { orderId };
       }
-      await repository.addOrderItem(cartOrder.orderId, itemName, Number(itemPrice));
-      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: `/restaurant/menu?id=${restaurantId}` });
+      await repository.addOrderItem(
+        cartOrder.orderId,
+        itemName,
+        Number(itemPrice),
+      );
+      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, {
+        Location: `/restaurant/menu?id=${restaurantId}`,
+      });
       res.end();
     } catch {
       errorController(HTTP_STATUS.SERVER_ERROR, req, res);
@@ -40,7 +51,9 @@ export const orderController = {
       const cartOrder = await repository.findCartOrder(userId, restaurantId);
       if (!cartOrder) return errorController(HTTP_STATUS.BAD_REQUEST, req, res);
       await repository.updateStatus(cartOrder.orderId, OrderStatus.SUBMITTED);
-      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, { Location: `/order?id=${cartOrder.orderId}` });
+      res.writeHead(HTTP_STATUS.TEMP_REDIRECT, {
+        Location: `/order?id=${cartOrder.orderId}`,
+      });
       res.end();
     } catch {
       errorController(HTTP_STATUS.SERVER_ERROR, req, res);
@@ -57,14 +70,35 @@ export const orderController = {
       if (!order) return errorController(HTTP_STATUS.NOT_FOUND, req, res); // sends 404 if the order doesn't exist
       const items = await repository.findItemsByOrderId(orderId); // fetches all items belonging to this order
       const orderItems = items.length
-        ? items.map(i => `<li><div class="order-meta"><span>${i.itemName}</span><small>× ${i.quantity || 1} — $${(Number(i.price) * (i.quantity || 1)).toFixed(2)}</small></div></li>`).join("")
+        ? items
+            .map(
+              (i) =>
+                `<li><div class="order-meta"><span>${i.itemName}</span><small>× ${i.quantity || 1} — $${(Number(i.price) * (i.quantity || 1)).toFixed(2)}</small></div></li>`,
+            )
+            .join("")
         : "<li class='empty'>No items in this order.</li>";
-      const totalPrice = items.reduce((sum, i) => sum + Number(i.price), 0).toFixed(2); // sums item prices to two decimals
+      const totalPrice = items
+        .reduce((sum, i) => sum + Number(i.price), 0)
+        .toFixed(2); // sums item prices to two decimals
+      let completeOrderButton = "";
+
+      if (order.status === OrderStatus.ARRIVED) {
+        completeOrderButton = `
+    <form method="POST" action="/order/complete" style="margin-top:1rem;">
+      <input type="hidden" name="orderId" value="${order.orderId}" />
+
+      <button type="submit" class="btn-add">
+        Pay and Get Order
+      </button>
+    </form>
+  `;
+      }
       await renderHTML(res, "Customer-OrderView.html", {
-        orderId: order.orderId, // injected into {{orderId}} in the view
-        orderStatus: order.status, // injected into {{orderStatus}} in the view
-        orderItems, // injected into {{orderItems}} in the view
-        totalPrice, // injected into {{totalPrice}} in the view
+        orderId: order.orderId,
+        orderStatus: order.status,
+        orderItems,
+        totalPrice,
+        completeOrderButton,
       });
     } catch {
       errorController(HTTP_STATUS.UNAUTHORIZED, req, res); // sends 401 if token is missing or expired
@@ -78,8 +112,13 @@ export const orderController = {
       const { orderId } = await parseBody(req); // reads the order ID from the hidden form field
       const order = await repository.findById(orderId); // fetches the order to verify ownership and current status
       if (!order) return errorController(HTTP_STATUS.NOT_FOUND, req, res); // sends 404 if the order doesn't exist
-      if (order.customerId !== userId) return errorController(HTTP_STATUS.UNAUTHORIZED, req, res); // prevents cancelling another customer's order
-      if (order.status === OrderStatus.ONTHEWAY || order.status === OrderStatus.DELIVERED) { // can't cancel once a courrier has picked it up
+      if (order.customerId !== userId)
+        return errorController(HTTP_STATUS.UNAUTHORIZED, req, res); // prevents cancelling another customer's order
+      if (
+        order.status === OrderStatus.ONTHEWAY ||
+        order.status === OrderStatus.DELIVERED
+      ) {
+        // can't cancel once a courrier has picked it up
         return errorController(HTTP_STATUS.BAD_REQUEST, req, res);
       }
       await repository.updateStatus(orderId, OrderStatus.INCOMPLETE); // marks the order as Incomplete Cart (cancelled)
@@ -87,6 +126,24 @@ export const orderController = {
       res.end();
     } catch {
       errorController(HTTP_STATUS.SERVER_ERROR, req, res); // sends 500 if anything goes wrong
+    }
+  },
+
+  complete: async (req, res) => {
+    try {
+      await verifyToken(req);
+
+      const { orderId } = await parseBody(req);
+
+      await repository.updateStatus(orderId, OrderStatus.DELIVERED);
+
+      res.writeHead(302, {
+        Location: `/order?id=${orderId}`,
+      });
+
+      res.end();
+    } catch {
+      errorController(500, req, res);
     }
   },
 };

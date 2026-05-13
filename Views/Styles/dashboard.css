@@ -604,3 +604,65 @@ select:focus {
   color: var(--black);
   background: rgba(232, 24, 27, 0.06);
 }
+
+.dashboard-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3rem;
+
+  padding-bottom: 1.2rem;
+
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-tab {
+  background: transparent;
+  border: none;
+
+  color: var(--text-muted);
+
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 1.05rem;
+  letter-spacing: 1.5px;
+
+  cursor: pointer;
+
+  padding-bottom: 1rem;
+
+  position: relative;
+
+  transition: color 0.2s ease;
+}
+
+.dashboard-tab:hover {
+  color: var(--white);
+}
+
+.dashboard-tab.active {
+  color: var(--red);
+}
+
+.dashboard-tab.active::after {
+  content: "";
+
+  position: absolute;
+
+  left: 0;
+  bottom: -1px;
+
+  width: 100%;
+  height: 3px;
+
+  background: var(--red);
+
+  border-radius: 999px;
+}
+
+.dashboard-tab-content {
+  display: none;
+  padding-top: 1.5rem;
+}
+
+.dashboard-tab-content.active {
+  display: block;
+}

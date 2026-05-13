@@ -1,0 +1,169 @@
+:root {
+  --red: #e8181b;
+  --red-dark: #b81215;
+  --red-glow: rgba(232, 24, 27, 0.15);
+  --black: #0a0a0a;
+  --black-2: #111111;
+  --black-3: #181818;
+  --black-4: #222222;
+  --border: rgba(255,255,255,0.07);
+  --border-hover: rgba(255,255,255,0.14);
+  --text: #f0f0f0;
+  --text-muted: #777;
+  --text-soft: #aaa;
+  --white: #ffffff;
+  --card: rgba(255, 255, 255, 0.04);
+  --card-hover: rgba(255, 255, 255, 0.07);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(232, 24, 27, 0.18), transparent 35%),
+    radial-gradient(circle at top right, rgba(62, 32, 32, 0.12), transparent 30%),
+    linear-gradient(135deg, var(--black), var(--red-dark));
+  color: var(--text);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+
+main.welcome {
+  width: 100%;
+  max-width: 980px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.brand-icon {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(
+    135deg,
+    rgba(232, 24, 27, 0.18),
+    rgba(232, 24, 27, 0.05)
+  );
+  border: 1px solid var(--border);
+  color: var(--red);
+  font-size: 22px;
+  box-shadow:
+    0 0 18px var(--red-glow),
+    inset 0 0 12px rgba(255,255,255,0.03);
+}
+
+.brand-name {
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: var(--white);
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 2.4rem;
+  font-weight: 900;
+  color: var(--white);
+}
+
+.subtitle {
+  margin: 0 0 28px;
+  color: var(--text-soft);
+  font-size: 1rem;
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+@media (max-width: 860px) {
+  .role-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.role-card {
+  position: relative;
+  text-decoration: none;
+  color: var(--text);
+  padding: 22px;
+  border-radius: 20px;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255,255,255,0.03),
+      rgba(255,255,255,0.015)
+    );
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.role-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(232, 24, 27, 0.08),
+      transparent 60%
+    );
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.role-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(232, 24, 27, 0.35);
+  background: var(--card-hover);
+  box-shadow:
+    0 10px 30px rgba(0,0,0,0.35),
+    0 0 25px rgba(232, 24, 27, 0.08);
+}
+
+.role-card:hover::before {
+  opacity: 1;
+}
+
+.role-title {
+  display: block;
+  font-weight: 900;
+  font-size: 1.25rem;
+  margin-bottom: 10px;
+  color: var(--white);
+}
+
+.role-desc {
+  display: block;
+  color: var(--text-soft);
+  line-height: 1.5;
+  font-size: 0.96rem;
+}

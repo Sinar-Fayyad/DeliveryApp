@@ -8,7 +8,7 @@ import { createRouter } from "./Router.mjs"; // factory function that creates a 
 const router = createRouter(); // creates a new Router instance with an empty routes table
 
 // Pages
-router.add("GET", "/", pageController.login); // unauthenticated root visit lands on login, not the protected home page
+router.add("GET", "/", pageController.welcome); // serves the welcome page
 router.add("GET", "/login", pageController.login); // serves the login form
 router.add("GET", "/register", pageController.register); // serves the registration form
 router.add("GET", "/home", pageController.home); // serves the customer home page
@@ -17,6 +17,7 @@ router.add("GET", "/home", pageController.home); // serves the customer home pag
 router.add("GET", "/index.css",     pageController.styleIndex);     // serves the login/register stylesheet
 router.add("GET", "/error.css",     pageController.styleError);     // serves the error pages stylesheet
 router.add("GET", "/dashboard.css", pageController.styleDashboard); // serves the dashboard pages stylesheet
+router.add("GET", "/welcome.css",  pageController.styleWelcome);  // serves the welcome page stylesheet
 
 // Customer Auth
 router.add("POST", "/auth/register", authController.register); // handles customer registration form submission
@@ -48,6 +49,8 @@ router.add("POST", "/cart/add", orderController.addToCart); // adds one item to 
 router.add("POST", "/order/create", orderController.create); // submits the in-progress cart as a placed order
 router.add("GET", "/order", orderController.view); // serves the order detail page — expects ?id= query param
 router.add("POST", "/order/cancel", orderController.cancel); // handles order cancellation from the order detail page
+router.add("POST", "/order/complete", orderController.complete);
+router.add("POST", "/restaurant/order/start", restaurantController.startPreparing);
 router.add("POST", "/order/assign", restaurantController.assignCourier); // manager assigns a courier to a submitted order
 
 // Courrier Status
